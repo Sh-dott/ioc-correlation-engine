@@ -1,0 +1,24 @@
+{
+  "iocs": [
+    {"value": "185.220.101.34", "type": "ip", "source": "siem-alert", "timestamp": "2026-02-14T08:00:00Z"},
+    {"value": "185.220.101.35", "type": "ip", "source": "siem-alert", "timestamp": "2026-02-14T08:15:00Z"},
+    {"value": "45.153.160.12", "type": "ip", "source": "firewall-log", "timestamp": "2026-02-14T09:00:00Z"},
+    {"value": "45.153.160.140", "type": "ip", "source": "firewall-log", "timestamp": "2026-02-14T09:30:00Z"},
+    {"value": "91.215.85.17", "type": "ip", "source": "ids-alert", "timestamp": "2026-02-13T22:00:00Z"},
+    {"value": "194.26.192.64", "type": "ip", "source": "threat-feed", "timestamp": "2026-02-13T18:00:00Z"},
+
+    {"value": "update-service.xyz", "type": "domain", "source": "dns-log", "timestamp": "2026-02-14T08:05:00Z"},
+    {"value": "cdn-static.top", "type": "domain", "source": "proxy-log", "timestamp": "2026-02-14T08:20:00Z"},
+    {"value": "api-gateway.cc", "type": "domain", "source": "dns-log", "timestamp": "2026-02-14T09:10:00Z"},
+    {"value": "mail-secure.info", "type": "domain", "source": "email-gateway", "timestamp": "2026-02-13T23:00:00Z"},
+    {"value": "login-portal.tk", "type": "domain", "source": "proxy-log", "timestamp": "2026-02-14T10:00:00Z"},
+    {"value": "cloud-sync.ru", "type": "domain", "source": "dns-log", "timestamp": "2026-02-13T20:00:00Z"},
+
+    {"value": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2", "type": "hash", "source": "edr-detection", "timestamp": "2026-02-14T08:10:00Z"},
+    {"value": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3", "type": "hash", "source": "sandbox-analysis", "timestamp": "2026-02-14T08:30:00Z"},
+    {"value": "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4", "type": "hash", "source": "edr-detection", "timestamp": "2026-02-14T09:15:00Z"},
+    {"value": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5", "type": "hash", "source": "malware-repo", "timestamp": "2026-02-13T21:00:00Z"},
+    {"value": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6", "type": "hash", "source": "threat-feed", "timestamp": "2026-02-14T07:00:00Z"},
+    {"value": "f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7", "type": "hash", "source": "edr-detection", "timestamp": "2026-02-14T11:00:00Z"}
+  ]
+}
