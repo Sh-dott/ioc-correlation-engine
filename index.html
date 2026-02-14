@@ -907,7 +907,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback, useMemo } = React;
-const API = '';
+const API = window.location.hostname.includes('github.io') ? 'https://ioc-correlation-engine.onrender.com' : '';
 
 /* ── Scroll reveal hook ── */
 function useReveal(threshold = 0.15) {
