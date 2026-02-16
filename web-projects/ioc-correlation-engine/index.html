@@ -1,0 +1,2403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNAPSE | Threat Intelligence Correlation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* ── Custom property for gradient rotation ── */
+        @property --angle {
+            syntax: '<angle>';
+            initial-value: 0deg;
+            inherits: false;
+        }
+        @property --cnt {
+            syntax: '<integer>';
+            initial-value: 0;
+            inherits: false;
+        }
+
+        :root {
+            --bg-base: #040810;
+            --bg-surface: #0a0f1a;
+            --bg-card: rgba(10, 15, 28, 0.82);
+            --bg-elevated: #0f1628;
+            --bg-input: #060810;
+            --bg-hover: #141e36;
+            --border: rgba(191, 219, 254, 0.12);
+            --border-hover: rgba(191, 219, 254, 0.3);
+            --border-active: rgba(191, 219, 254, 0.5);
+            --text-primary: #f0f9ff;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #bfdbfe;
+            --cyan: #bfdbfe;
+            --blue: #93c5fd;
+            --green: #22c55e;
+            --amber: #f59e0b;
+            --rose: #ef4444;
+            --red: #dc2626;
+            --purple: #60a5fa;
+            --teal: #bae6fd;
+            --radius: 16px;
+            --radius-sm: 12px;
+            --glow-cyan: rgba(191, 219, 254, 0.15);
+            --glow-blue: rgba(147, 197, 253, 0.15);
+            --glow-purple: rgba(96, 165, 250, 0.12);
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ── Cyber network background photo ── */
+        .bg-photo {
+            position: fixed; inset: 0; z-index: 0;
+            background:
+                url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80')
+                center / cover no-repeat;
+            filter: brightness(0.18) saturate(1.4) hue-rotate(200deg);
+            pointer-events: none;
+        }
+        .bg-photo::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(
+                180deg,
+                rgba(4,6,14,0.6) 0%,
+                rgba(4,6,14,0.3) 30%,
+                rgba(4,6,14,0.4) 70%,
+                rgba(4,6,14,0.85) 100%
+            );
+        }
+
+        /* ── Ambient layers ── */
+        .ambient {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+        }
+        .ambient-grad {
+            position: absolute; inset: 0;
+            background:
+                radial-gradient(ellipse 1000px 700px at 10% 5%, rgba(191,219,254,0.05) 0%, transparent 55%),
+                radial-gradient(ellipse 800px 600px at 90% 90%, rgba(186,230,253,0.04) 0%, transparent 55%),
+                radial-gradient(ellipse 600px 500px at 50% 35%, rgba(224,242,254,0.035) 0%, transparent 55%),
+                radial-gradient(ellipse 500px 400px at 70% 20%, rgba(186,230,253,0.025) 0%, transparent 50%);
+        }
+        .ambient svg { width: 100%; height: 100%; position: absolute; inset: 0; }
+        .noise {
+            position: absolute; inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+            opacity: 0.5;
+        }
+
+        /* ── Animated background elements ── */
+        @keyframes dash-flow { to { stroke-dashoffset: -40; } }
+        @keyframes node-pulse {
+            0%, 100% { r: 2; opacity: 0.2; }
+            50% { r: 3.5; opacity: 0.6; }
+        }
+        @keyframes radar-sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes float-up {
+            0% { transform: translateY(0) scale(1); opacity: 0.15; }
+            50% { opacity: 0.4; }
+            100% { transform: translateY(-110vh) scale(0.3); opacity: 0; }
+        }
+        @keyframes hex-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* ── Animated floating orbs ── */
+        @keyframes blob-drift-1 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(80px, -60px) scale(1.1); }
+            50% { transform: translate(-40px, -120px) scale(0.95); }
+            75% { transform: translate(-80px, 40px) scale(1.05); }
+        }
+        @keyframes blob-drift-2 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(-100px, 80px) scale(1.15); }
+            66% { transform: translate(60px, -80px) scale(0.9); }
+        }
+        @keyframes blob-drift-3 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            20% { transform: translate(120px, 60px) scale(0.95); }
+            40% { transform: translate(-60px, 100px) scale(1.1); }
+            60% { transform: translate(-100px, -40px) scale(1.05); }
+            80% { transform: translate(40px, -80px) scale(0.9); }
+        }
+        .ambient-blob {
+            position: absolute; border-radius: 50%; filter: blur(130px); pointer-events: none;
+        }
+        .ambient-blob.b1 {
+            width: 600px; height: 600px; top: -5%; left: 5%;
+            background: #bfdbfe; opacity: 0.05;
+            animation: blob-drift-1 25s ease-in-out infinite;
+        }
+        .ambient-blob.b2 {
+            width: 500px; height: 500px; top: 35%; right: 5%;
+            background: #93c5fd; opacity: 0.04;
+            animation: blob-drift-2 30s ease-in-out infinite;
+        }
+        .ambient-blob.b3 {
+            width: 450px; height: 450px; bottom: 5%; left: 35%;
+            background: #60a5fa; opacity: 0.035;
+            animation: blob-drift-3 35s ease-in-out infinite;
+        }
+
+        /* ── Scroll reveal ── */
+        .reveal {
+            opacity: 0; transform: translateY(30px);
+            transition: opacity 0.8s cubic-bezier(0.16,1,0.3,1), transform 0.8s cubic-bezier(0.16,1,0.3,1);
+        }
+        .reveal.visible { opacity: 1; transform: translateY(0); }
+        .reveal-d1 { transition-delay: 0.08s; }
+        .reveal-d2 { transition-delay: 0.16s; }
+        .reveal-d3 { transition-delay: 0.24s; }
+        .reveal-d4 { transition-delay: 0.32s; }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); opacity: 0; }
+            40% { opacity: 1; }
+            100% { transform: translateY(100vh); opacity: 0; }
+        }
+        .bg-circuit-line { stroke: rgba(224,242,254,0.05); stroke-width: 0.8; stroke-dasharray: 6 14; animation: dash-flow 5s linear infinite; }
+        .bg-circuit-line.alt { stroke: rgba(191,219,254,0.04); animation-duration: 7s; animation-direction: reverse; }
+        .bg-node { fill: rgba(224,242,254,0.25); animation: node-pulse 3.5s ease-in-out infinite; }
+        .bg-node:nth-child(odd) { animation-delay: -1.5s; fill: rgba(191,219,254,0.2); }
+        .bg-node:nth-child(3n) { animation-duration: 4.5s; fill: rgba(186,230,253,0.18); }
+        .bg-radar { transform-origin: center; animation: radar-sweep 10s linear infinite; }
+        .bg-particle { fill: rgba(224,242,254,0.15); animation: float-up linear infinite; }
+        .bg-hex { stroke: rgba(224,242,254,0.03); stroke-width: 0.5; fill: none; transform-origin: center; animation: hex-rotate 80s linear infinite; }
+        .bg-hex.r { animation-direction: reverse; stroke: rgba(191,219,254,0.025); }
+        .scanline {
+            position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(191,219,254,0.08), transparent);
+            animation: scanline 8s linear infinite;
+            pointer-events: none;
+        }
+
+        /* ── Topnav ── */
+        .topnav {
+            position: sticky; top: 0; z-index: 50;
+            backdrop-filter: blur(24px) saturate(1.5);
+            background: rgba(4,6,14,0.88);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            padding: 0 2.5rem; height: 60px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .topnav::after {
+            content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent 10%, rgba(59,130,246,0.3), rgba(96,165,250,0.2), rgba(59,130,246,0.3), transparent 90%);
+        }
+        .topnav::before {
+            content: ''; position: absolute; bottom: -6px; left: 15%; right: 15%; height: 6px;
+            background: linear-gradient(90deg, transparent, rgba(59,130,246,0.06), transparent);
+            filter: blur(4px); pointer-events: none;
+        }
+        .brand { display: flex; align-items: center; gap: 14px; }
+        .brand-icon {
+            width: 38px; height: 38px; border-radius: 10px; position: relative;
+            background: linear-gradient(135deg, var(--cyan), var(--blue), var(--purple));
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 900; font-size: 16px; color: #fff;
+            box-shadow: 0 2px 16px rgba(191,219,254,0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        .brand-icon::before {
+            content: ''; position: absolute; inset: -2px; border-radius: 12px;
+            background: linear-gradient(135deg, var(--cyan), var(--blue), var(--purple));
+            opacity: 0.4; filter: blur(6px); z-index: -1;
+        }
+        .brand-name {
+            font-size: 1.1rem; font-weight: 800; letter-spacing: 2px;
+            color: #f0f9ff;
+        }
+        .brand-sub { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 2px; color: var(--text-secondary); font-weight: 500; }
+        .nav-right { display: flex; align-items: center; gap: 10px; }
+        .status-pill {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 0.71rem; color: var(--text-secondary);
+            padding: 5px 12px; border-radius: 100px;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+        }
+        .status-dot {
+            width: 6px; height: 6px; border-radius: 50%; background: #22c55e;
+            box-shadow: 0 0 8px rgba(34,197,94,0.5);
+            animation: pulse 2.5s ease-in-out infinite;
+        }
+        @keyframes pulse { 50% { opacity: 0.3; } }
+
+        .export-btns { display: flex; gap: 5px; }
+        .btn-exp {
+            padding: 6px 13px; border-radius: 7px; font-size: 0.71rem; font-weight: 700;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: #ffffff; text-decoration: none; font-family: 'Inter', sans-serif;
+            transition: all 0.2s; letter-spacing: 0.3px;
+        }
+        .btn-exp:hover { border-color: rgba(59,130,246,0.3); color: var(--text-secondary); background: rgba(59,130,246,0.06); }
+
+        /* ── Layout ── */
+        .content { position: relative; z-index: 2; max-width: 1560px; margin: 0 auto; padding: 1.75rem 2.5rem 3rem; }
+
+        /* ── Animations ── */
+        .anim { animation: rise 0.6s cubic-bezier(0.16,1,0.3,1) both; }
+        @keyframes rise { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform: translateY(0); } }
+        .d1 { animation-delay: .08s; } .d2 { animation-delay: .16s; } .d3 { animation-delay: .24s; } .d4 { animation-delay: .32s; } .d5 { animation-delay: .4s; }
+
+        /* ── Hero section ── */
+        .hero {
+            text-align: center; padding: 4rem 2rem 2.5rem; margin-bottom: 2rem;
+            position: relative;
+        }
+        @keyframes logo-breathe {
+            0%, 100% { filter: drop-shadow(0 0 16px rgba(59,130,246,0.35)) drop-shadow(0 0 40px rgba(59,130,246,0.1)); }
+            50% { filter: drop-shadow(0 0 28px rgba(59,130,246,0.5)) drop-shadow(0 0 60px rgba(96,165,250,0.15)); }
+        }
+        .hero svg { animation: logo-breathe 4s ease-in-out infinite; }
+        .hero-logo {
+            max-width: 180px; height: auto;
+            animation: logo-breathe 4s ease-in-out infinite;
+            margin-bottom: 8px;
+        }
+        .hero::before {
+            content: ''; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%);
+            width: 600px; height: 400px; border-radius: 50%;
+            background: radial-gradient(ellipse, rgba(59,130,246,0.06) 0%, rgba(96,165,250,0.02) 40%, transparent 70%);
+            pointer-events: none;
+        }
+        .hero-title {
+            font-size: 2.8rem; font-weight: 900; letter-spacing: 10px; line-height: 1;
+            background: linear-gradient(135deg, #f0f9ff 0%, #dbeafe 25%, #93c5fd 50%, #60a5fa 75%, #dbeafe 100%);
+            background-size: 300% 300%;
+            animation: gradient-shift 8s ease infinite;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 14px; position: relative;
+        }
+        .hero-title::after {
+            content: ''; position: absolute; inset: -20px -40px; z-index: -1;
+            background: radial-gradient(ellipse, rgba(59,130,246,0.08) 0%, transparent 70%);
+            border-radius: 50%;
+            animation: hero-glow 5s ease-in-out infinite alternate;
+        }
+        @keyframes hero-glow {
+            from { opacity: 0.4; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1.05); }
+        }
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .hero-sub {
+            font-size: 0.72rem; color: var(--text-muted); letter-spacing: 5px;
+            text-transform: uppercase; font-weight: 500; opacity: 0.7;
+        }
+        .hero-line {
+            width: 60px; height: 2px; margin: 20px auto 0;
+            background: linear-gradient(90deg, transparent, #3b82f6, #60a5fa, #3b82f6, transparent);
+            border-radius: 1px;
+            box-shadow: 0 0 12px rgba(59,130,246,0.3);
+        }
+
+        /* ── Cards with gradient border ── */
+        .card {
+            position: relative; border-radius: var(--radius);
+            background: linear-gradient(165deg, rgba(12,17,30,0.92), rgba(8,11,22,0.95));
+            backdrop-filter: blur(20px) saturate(1.5);
+            overflow: hidden; transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.2), 0 0 0 0.5px rgba(255,255,255,0.03) inset;
+        }
+        .card::before {
+            content: ''; position: absolute; inset: 0; border-radius: var(--radius);
+            padding: 1px;
+            background: linear-gradient(calc(var(--angle, 0deg) + 135deg), transparent 30%, rgba(59,130,246,0.18), rgba(96,165,250,0.12), transparent 70%);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor; mask-composite: exclude;
+            pointer-events: none; opacity: 0; transition: opacity 0.4s;
+            animation: border-rotate 6s linear infinite;
+        }
+        @keyframes border-rotate { to { --angle: 360deg; } }
+        .card:hover::before { opacity: 1; }
+        .card:hover {
+            box-shadow: 0 16px 60px rgba(0,0,0,0.35), 0 0 30px rgba(59,130,246,0.05);
+            transform: translateY(-3px);
+            border-color: rgba(255,255,255,0.08);
+        }
+        .card-head {
+            padding: 14px 22px; border-bottom: 1px solid rgba(255,255,255,0.04);
+            display: flex; justify-content: space-between; align-items: center;
+            background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+        }
+        .card-title { font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 10px; letter-spacing: 0.3px; }
+        .card-title .dot {
+            width: 7px; height: 7px; border-radius: 50%; background: #3b82f6;
+            box-shadow: 0 0 10px rgba(59,130,246,0.4);
+        }
+        .card-meta { font-size: 0.71rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.5px; opacity: 0.7; }
+        .card-body { padding: 22px; }
+
+        /* ── Section label ── */
+        .sec-label {
+            display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+            font-size: 0.73rem; text-transform: uppercase; letter-spacing: 3px;
+            color: var(--text-muted); font-weight: 600;
+        }
+        .sec-label::before {
+            content: ''; width: 3px; height: 14px; border-radius: 2px;
+            background: linear-gradient(180deg, #3b82f6, #60a5fa);
+            box-shadow: 0 0 10px rgba(59,130,246,0.35);
+        }
+        .sec-label::after {
+            content: ''; flex: 1; height: 1px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.06), transparent 60%);
+        }
+
+        /* ── Input section ── */
+        .input-card { margin-bottom: 1.5rem; }
+        .input-header h2 {
+            font-size: 1.05rem; font-weight: 700; margin-bottom: 4px;
+            display: flex; align-items: center; gap: 10px;
+            letter-spacing: 0.3px;
+        }
+        .input-header p { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
+
+        .tabs {
+            display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px;
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); margin-bottom: 12px;
+        }
+        .tabs button {
+            padding: 7px 18px; border: none; background: transparent; color: var(--text-muted);
+            border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 500;
+            font-family: 'Inter', sans-serif; transition: all 0.25s; letter-spacing: 0.3px;
+        }
+        .tabs button:hover { color: var(--text-secondary); }
+        .tabs button.on {
+            background: rgba(59,130,246,0.12);
+            color: #93c5fd; font-weight: 600;
+            box-shadow: 0 0 0 1px rgba(59,130,246,0.2), 0 2px 8px rgba(59,130,246,0.08);
+        }
+
+        textarea.inp {
+            width: 100%; min-height: 110px; max-height: 180px;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius-sm);
+            color: #93c5fd; padding: 14px 16px;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.79rem; line-height: 1.7;
+            resize: vertical; transition: all 0.3s;
+        }
+        textarea.inp:focus {
+            outline: none; border-color: rgba(59,130,246,0.3);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.06), 0 0 24px rgba(59,130,246,0.04);
+            background: rgba(0,0,0,0.35);
+        }
+        textarea.inp::placeholder { color: var(--text-muted); opacity: 0.5; }
+
+        .btn-run {
+            padding: 11px 36px; border: none; border-radius: 10px;
+            font-size: 0.88rem; font-weight: 700; cursor: pointer; margin-top: 14px;
+            color: #fff; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #2563eb, #3b82f6, #60a5fa);
+            box-shadow: 0 4px 16px rgba(37,99,235,0.3), 0 0 0 1px rgba(59,130,246,0.2) inset;
+            transition: all 0.3s cubic-bezier(0.16,1,0.3,1); position: relative; overflow: hidden;
+        }
+        .btn-run::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent 60%);
+        }
+        .btn-run::after {
+            content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: conic-gradient(transparent 0deg, rgba(255,255,255,0.06) 90deg, transparent 180deg);
+            animation: btn-shimmer 4s linear infinite;
+        }
+        @keyframes btn-shimmer { to { transform: rotate(360deg); } }
+        .btn-run:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px rgba(37,99,235,0.4), 0 0 0 1px rgba(96,165,250,0.3) inset;
+            background: linear-gradient(135deg, #3b82f6, #60a5fa, #93c5fd);
+        }
+        .btn-run:active { transform: translateY(0) scale(0.98); }
+        .btn-run:disabled { opacity: 0.3; cursor: not-allowed; transform: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important; }
+
+        .file-zone {
+            border: 1.5px dashed rgba(255,255,255,0.08); border-radius: var(--radius-sm);
+            padding: 2rem 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;
+            cursor: pointer; transition: all 0.3s; position: relative;
+            background: rgba(0,0,0,0.15);
+        }
+        .file-zone:hover { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.03); color: var(--text-secondary); }
+        .file-zone input { display: none; }
+
+        .err-box {
+            background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15);
+            border-radius: 10px; padding: 12px 18px; margin-top: 14px;
+            font-size: 0.85rem; color: var(--rose);
+        }
+
+        /* ── Stats ── */
+        .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+        @media (max-width: 1100px) { .stats { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 640px)  { .stats { grid-template-columns: repeat(2, 1fr); } }
+        .stat {
+            background: linear-gradient(165deg, rgba(12,17,30,0.9), rgba(8,11,22,0.85));
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.05); border-radius: var(--radius-sm);
+            padding: 20px 18px 16px; position: relative; overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+        }
+        .stat:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.08); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        .stat::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .stat::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 80px; height: 80px;
+            border-radius: 50%; filter: blur(35px); opacity: 0.08; pointer-events: none;
+        }
+        .stat.c-cyan::after    { background: linear-gradient(90deg, var(--cyan), transparent 70%); }
+        .stat.c-cyan::before   { background: var(--cyan); }
+        .stat.c-purple::after  { background: linear-gradient(90deg, var(--purple), transparent 70%); }
+        .stat.c-purple::before { background: var(--purple); }
+        .stat.c-amber::after   { background: linear-gradient(90deg, var(--amber), transparent 70%); }
+        .stat.c-amber::before  { background: var(--amber); }
+        .stat.c-green::after   { background: linear-gradient(90deg, var(--green), transparent 70%); }
+        .stat.c-green::before  { background: var(--green); }
+        .stat.c-rose::after    { background: linear-gradient(90deg, var(--rose), transparent 70%); }
+        .stat.c-rose::before   { background: var(--rose); }
+        .stat.c-blue::after    { background: linear-gradient(90deg, var(--blue), transparent 70%); }
+        .stat.c-blue::before   { background: var(--blue); }
+        .stat:hover::before { opacity: 0.15; }
+        .stat-icon {
+            font-size: 1.43rem; margin-bottom: 10px; opacity: 0.6;
+            filter: drop-shadow(0 0 4px currentColor);
+        }
+        .stat-val {
+            font-size: 2.43rem; font-weight: 900; line-height: 1; letter-spacing: -0.04em;
+            margin-bottom: 5px; font-variant-numeric: tabular-nums;
+            text-shadow: 0 0 30px currentColor;
+        }
+        .stat-lbl { font-size: 0.69rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); font-weight: 600; }
+
+        /* ── Visual breakdown row ── */
+        .viz-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+        @media (max-width: 900px) { .viz-row { grid-template-columns: 1fr; } }
+        .mini-chart { display: flex; flex-direction: column; align-items: center; padding: 24px 20px; }
+        .mini-chart-title {
+            font-size: 0.77rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 16px;
+            text-transform: uppercase; letter-spacing: 1.2px;
+        }
+        .donut-wrap { position: relative; width: 130px; height: 130px; }
+        .donut-center {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+        }
+        .donut-big { font-size: 1.83rem; font-weight: 900; line-height: 1; color: #ffffff; }
+        .donut-sub { font-size: 0.65rem; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 3px; }
+        .donut-legend { display: flex; gap: 16px; margin-top: 16px; }
+        .donut-leg-item { display: flex; align-items: center; gap: 6px; font-size: 0.79rem; color: var(--text-secondary); }
+        .donut-leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .risk-single { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 8px; }
+        .risk-badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 16px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; }
+        .bar-list { width: 100%; }
+        .bar-item { margin-bottom: 12px; }
+        .bar-label { display: flex; justify-content: space-between; font-size: 0.79rem; margin-bottom: 5px; }
+        .bar-label span:first-child { color: var(--text-secondary); text-transform: capitalize; }
+        .bar-label span:last-child { font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; }
+        .bar-track { height: 7px; background: var(--bg-base); border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 4px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); position: relative; }
+        .bar-fill::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15));
+            border-radius: 4px;
+        }
+
+        /* ── Threat Intel Panel ── */
+        .intel-wrap { margin-bottom: 1.5rem; }
+        .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+        @media (max-width: 1000px) { .intel-grid { grid-template-columns: 1fr; } }
+
+        /* IOC cards grid */
+        .ioc-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; padding: 20px; }
+        .ioc-node {
+            background: linear-gradient(145deg, rgba(10,15,28,0.7), rgba(7,10,20,0.6));
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 16px; transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+            position: relative; overflow: hidden;
+        }
+        .ioc-node::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, var(--accent), transparent 80%);
+            opacity: 0.5;
+        }
+        .ioc-node:hover { transform: translateY(-4px) scale(1.02); border-color: var(--border-hover);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3), 0 0 20px rgba(191,219,254,0.06); }
+        .ioc-node.high-risk::before { background: linear-gradient(90deg, var(--rose), transparent 80%); opacity: 0.8; }
+        .ioc-node-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .ioc-type-badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 3px 10px; border-radius: 6px; font-size: 0.67rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .ioc-type-badge.ip { background: rgba(59,130,246,0.1); color: #3b82f6; border: 1px solid rgba(59,130,246,0.2); }
+        .ioc-type-badge.domain { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+        .ioc-type-badge.hash { background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); }
+        .ioc-rep-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            box-shadow: 0 0 8px currentColor;
+        }
+        .ioc-val {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.77rem;
+            color: var(--text-primary); margin-bottom: 10px; word-break: break-all;
+            line-height: 1.5;
+        }
+        .ioc-meta { display: flex; gap: 14px; font-size: 0.69rem; color: var(--text-muted); }
+        .ioc-meta strong { color: var(--text-secondary); font-weight: 600; }
+
+        /* Hub spotlight */
+        .hub-spot { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; padding: 20px; }
+        .hub-node {
+            background: linear-gradient(145deg, rgba(10,15,28,0.7), rgba(7,10,20,0.6));
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px; text-align: center; position: relative;
+            transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+        }
+        .hub-node:hover { transform: translateY(-4px); border-color: var(--border-hover);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3), 0 0 20px rgba(191,219,254,0.06); }
+        .hub-rank-badge {
+            position: absolute; top: 10px; left: 10px;
+            width: 28px; height: 28px; border-radius: 8px;
+            background: linear-gradient(135deg, rgba(191,219,254,0.12), rgba(96,165,250,0.08));
+            border: 1px solid rgba(191,219,254,0.2);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #bfdbfe;
+        }
+        .hub-name {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.79rem;
+            color: var(--text-primary); margin-top: 12px; word-break: break-all;
+        }
+        .hub-detail { font-size: 0.69rem; color: var(--text-muted); margin-top: 6px; }
+
+        /* Correlation pairs */
+        .corr-list { padding: 14px 20px; }
+        .corr-pair {
+            display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+            border-radius: 10px; margin-bottom: 6px;
+            background: rgba(7,10,20,0.4); border: 1px solid transparent;
+            transition: all 0.3s; font-size: 0.79rem;
+        }
+        .corr-pair:hover { background: rgba(191,219,254,0.03); border-color: var(--border); transform: translateX(4px); }
+        .corr-src, .corr-tgt {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+            color: var(--text-primary); min-width: 0; flex: 1;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .corr-arrow {
+            display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--text-muted);
+        }
+        .corr-line {
+            width: 40px; height: 2px; border-radius: 1px;
+            background: linear-gradient(90deg, var(--accent), var(--purple));
+            position: relative;
+        }
+        .corr-line::after {
+            content: ''; position: absolute; inset: 0; border-radius: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+        }
+        .corr-type {
+            padding: 3px 8px; border-radius: 5px; font-size: 0.65rem; font-weight: 600;
+            background: rgba(191,219,254,0.06); color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+        .corr-weight {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+            font-weight: 700; color: var(--accent); flex-shrink: 0; min-width: 36px; text-align: right;
+        }
+
+        /* Heatmap */
+        .heatmap-wrap { padding: 20px; overflow-x: auto; }
+        .heatmap-wrap svg text { font-family: 'JetBrains Mono', monospace; }
+
+        /* Timeline */
+        .timeline-wrap { padding: 20px; position: relative; }
+        .tl-track {
+            position: relative; height: 80px; margin: 30px 0 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .tl-dot {
+            position: absolute; bottom: -5px; width: 10px; height: 10px;
+            border-radius: 50%; transform: translateX(-50%);
+            box-shadow: 0 0 8px currentColor;
+            transition: all 0.3s; cursor: default;
+        }
+        .tl-dot:hover { transform: translateX(-50%) scale(1.6); }
+        .tl-stem {
+            position: absolute; bottom: 5px; width: 1px; left: 50%;
+            background: currentColor; opacity: 0.3;
+        }
+        .tl-label {
+            position: absolute; bottom: -24px; transform: translateX(-50%);
+            font-size: 0.61rem; color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace; white-space: nowrap;
+        }
+        .tl-legend { display: flex; gap: 16px; justify-content: center; margin-top: 30px; font-size: 0.73rem; }
+        .tl-legend-item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+        .tl-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* ── Grid ── */
+        .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        @media (max-width: 1000px) { .g2 { grid-template-columns: 1fr; } }
+
+        /* ── Campaign ── */
+        .camp {
+            background: linear-gradient(135deg, var(--bg-base), var(--bg-surface));
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px; margin-bottom: 12px; position: relative; overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.16,1,0.3,1); padding-left: 24px;
+        }
+        .camp::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 0 3px 3px 0; }
+        .camp::after {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 60px;
+            pointer-events: none; opacity: 0; transition: opacity 0.3s;
+        }
+        .camp.CRITICAL::before { background: linear-gradient(180deg, var(--red), var(--rose)); }
+        .camp.CRITICAL::after { background: linear-gradient(90deg, rgba(239,68,68,0.06), transparent); }
+        .camp.HIGH::before { background: linear-gradient(180deg, var(--amber), #c98a1a); }
+        .camp.HIGH::after { background: linear-gradient(90deg, rgba(245,158,11,0.05), transparent); }
+        .camp.MEDIUM::before { background: linear-gradient(180deg, #bfdbfe, #93c5fd); }
+        .camp.MEDIUM::after { background: linear-gradient(90deg, rgba(191,219,254,0.05), transparent); }
+        .camp.LOW::before { background: linear-gradient(180deg, #22c55e, #16a34a); }
+        .camp.LOW::after { background: linear-gradient(90deg, rgba(34,197,94,0.04), transparent); }
+        .camp:hover { border-color: var(--border-hover); transform: translateX(4px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+        .camp:hover::after { opacity: 1; }
+        .camp-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+        .camp-id { font-family: 'JetBrains Mono', monospace; font-size: 0.71rem; color: var(--text-muted); margin-bottom: 3px; letter-spacing: 0.5px; }
+        .camp-name { font-size: 0.97rem; font-weight: 700; }
+        .risk-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-radius: 100px;
+            font-size: 0.65rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; flex-shrink: 0;
+        }
+        .risk-pill.CRITICAL { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.18); box-shadow: 0 0 12px rgba(239,68,68,0.08); }
+        .risk-pill.HIGH     { background: rgba(245,158,11,0.08); color: var(--amber); border: 1px solid rgba(245,158,11,0.15); }
+        .risk-pill.MEDIUM   { background: rgba(191,219,254,0.08); color: #bfdbfe; border: 1px solid rgba(191,219,254,0.15); }
+        .risk-pill.LOW      { background: rgba(34,197,94,0.08); color: var(--green); border: 1px solid rgba(34,197,94,0.15); }
+        .risk-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
+        .camp-row { display: flex; gap: 22px; font-size: 0.79rem; color: var(--text-muted); margin-bottom: 8px; }
+        .camp-row strong { color: var(--text-secondary); font-weight: 600; }
+        .camp-infra { font-size: 0.75rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-bottom: 6px; }
+        .mitre-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+        .mt {
+            padding: 4px 10px; border-radius: 6px; font-size: 0.67rem;
+            font-family: 'JetBrains Mono', monospace; font-weight: 500;
+            background: linear-gradient(135deg, rgba(191,219,254,0.08), rgba(186,230,253,0.08));
+            color: #bfdbfe; border: 1px solid rgba(191,219,254,0.15);
+            transition: all 0.25s;
+        }
+        .mt:hover { background: rgba(191,219,254,0.15); border-color: rgba(191,219,254,0.3); transform: translateY(-1px); }
+        .conf-track { height: 4px; background: var(--bg-base); border-radius: 3px; overflow: hidden; margin-top: 12px; }
+        .conf-bar { height: 100%; border-radius: 3px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); position: relative; }
+        .conf-bar::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2)); border-radius: 3px; }
+
+        /* ── Confidence gauge ── */
+        .gauge-row {
+            display: flex; gap: 14px; align-items: center; margin-top: 12px;
+            padding: 12px 14px; background: rgba(5,8,16,0.5);
+            border-radius: 10px; border: 1px solid rgba(255,255,255,0.02);
+        }
+        .gauge-mini { width: 48px; height: 48px; flex-shrink: 0; }
+        .gauge-details { flex: 1; }
+        .gauge-det-row { display: flex; justify-content: space-between; font-size: 0.73rem; margin-bottom: 4px; }
+        .gauge-det-row span:first-child { color: var(--text-muted); }
+        .gauge-det-row span:last-child { color: var(--text-secondary); font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+
+        /* ── Terminal ── */
+        .term { background: linear-gradient(180deg, #060a14, #040810); border-radius: var(--radius-sm); border: 1px solid var(--border); overflow: hidden; position: relative; }
+        .term::after {
+            content: ''; position: absolute; inset: 0; pointer-events: none;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.003) 2px, rgba(255,255,255,0.003) 4px);
+        }
+        .term-bar {
+            display: flex; align-items: center; gap: 7px; padding: 10px 16px;
+            background: rgba(255,255,255,0.015); border-bottom: 1px solid var(--border);
+        }
+        .term-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .term-path { font-family: 'JetBrains Mono', monospace; font-size: 0.71rem; color: var(--text-muted); margin-left: 8px; }
+        .term-body {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; line-height: 1.8;
+            white-space: pre-wrap; color: var(--text-secondary); padding: 20px;
+            max-height: 620px; overflow-y: auto;
+        }
+        .term-body::-webkit-scrollbar { width: 4px; }
+        .term-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        /* ── Hub table ── */
+        .htbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.83rem; }
+        .htbl thead th {
+            text-align: left; padding: 12px 16px; font-size: 0.71rem; text-transform: uppercase;
+            letter-spacing: 1.4px; color: var(--text-muted); font-weight: 600;
+            border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.01);
+        }
+        .htbl tbody tr { transition: all 0.3s; }
+        .htbl tbody tr:hover { background: rgba(191,219,254,0.04); transform: translateX(3px); }
+        .htbl tbody td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.015); }
+        .h-rank {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px; border-radius: 7px;
+            background: rgba(191,219,254,0.08); color: #bfdbfe;
+        }
+        .h-node { font-family: 'JetBrains Mono', monospace; font-size: 0.79rem; color: #bfdbfe; }
+        .cbar-t { flex: 1; height: 6px; background: var(--bg-base); border-radius: 3px; overflow: hidden; }
+        .cbar-f { height: 100%; background: linear-gradient(90deg, #e0f2fe, #bfdbfe, #60a5fa); border-radius: 3px; transition: width 0.6s ease; }
+        .cbar-v { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-secondary); min-width: 50px; text-align: right; font-weight: 600; }
+
+        /* ── Loader ── */
+        .loading { display: flex; flex-direction: column; align-items: center; padding: 4rem; gap: 20px; }
+        .loading::before {
+            content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%;
+            background: radial-gradient(ellipse, rgba(191,219,254,0.06) 0%, transparent 70%);
+            animation: hero-glow 2s ease-in-out infinite alternate; pointer-events: none;
+        }
+        .ld-orb {
+            position: relative; width: 60px; height: 60px;
+        }
+        .ld-orb .r1, .ld-orb .r2, .ld-orb .r3 {
+            position: absolute; inset: 0; border-radius: 50%;
+            border: 2px solid transparent;
+        }
+        .ld-orb .r1 { border-top-color: #bfdbfe; animation: spin 1s linear infinite; }
+        .ld-orb .r2 { inset: 6px; border-right-color: #93c5fd; animation: spin 1.5s linear infinite reverse; }
+        .ld-orb .r3 { inset: 12px; border-bottom-color: #60a5fa; animation: spin 2s linear infinite; }
+        .ld-core {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 8px; height: 8px; border-radius: 50%; background: #bfdbfe;
+            box-shadow: 0 0 14px rgba(191,219,254,0.4);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .ld-text { font-size: 0.89rem; color: var(--text-secondary); font-weight: 500; }
+        .ld-sub {
+            font-size: 0.73rem; font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted); letter-spacing: 1px;
+        }
+        .ld-steps {
+            display: flex; gap: 8px; margin-top: 4px;
+        }
+        .ld-step {
+            padding: 4px 10px; border-radius: 6px; font-size: 0.67rem;
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-card); border: 1px solid var(--border);
+            color: var(--text-muted); animation: step-glow 3s ease-in-out infinite;
+        }
+        .ld-step:nth-child(1) { animation-delay: 0s; }
+        .ld-step:nth-child(2) { animation-delay: 0.6s; }
+        .ld-step:nth-child(3) { animation-delay: 1.2s; }
+        .ld-step:nth-child(4) { animation-delay: 1.8s; }
+        .ld-step:nth-child(5) { animation-delay: 2.4s; }
+        @keyframes step-glow {
+            0%, 100% { color: var(--text-muted); border-color: var(--border); }
+            20% { color: #bfdbfe; border-color: rgba(191,219,254,0.35); background: rgba(191,219,254,0.06); }
+            40% { color: var(--text-muted); border-color: var(--border); }
+        }
+
+        /* ── Footer ── */
+        .footer {
+            text-align: center; padding: 3rem 0 1.5rem;
+            font-size: 0.67rem; color: var(--text-muted); letter-spacing: 2px; opacity: 0.6;
+        }
+        .footer-line {
+            width: 40px; height: 1px; margin: 0 auto 14px;
+            background: linear-gradient(90deg, transparent, rgba(59,130,246,0.3), transparent);
+            opacity: 0.3;
+        }
+        .footer-brand {
+            font-weight: 700; letter-spacing: 3px;
+            color: var(--text-secondary);
+        }
+
+        /* ── Scroll Progress Bar ── */
+        .scroll-progress {
+            position: fixed; top: 0; left: 0; height: 3px; z-index: 100;
+            background: linear-gradient(90deg, #60a5fa, #bfdbfe, #93c5fd, #e0f2fe);
+            transition: width 0.1s linear; pointer-events: none;
+            box-shadow: 0 0 12px rgba(191,219,254,0.4);
+        }
+
+        /* ── Toast Notifications ── */
+        .toast-container {
+            position: fixed; top: 80px; right: 24px; z-index: 200;
+            display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+        }
+        .toast {
+            pointer-events: auto;
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 20px; border-radius: 14px;
+            background: rgba(10,15,28,0.95); backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            font-size: 0.85rem; color: var(--text-primary);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(191,219,254,0.06);
+            animation: toast-in 0.4s cubic-bezier(0.16,1,0.3,1);
+            min-width: 280px;
+        }
+        .toast.leaving { animation: toast-out 0.3s ease forwards; }
+        .toast-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .toast.success { border-color: rgba(34,197,94,0.25); }
+        .toast.success .toast-icon { color: var(--green); }
+        .toast.error { border-color: rgba(239,68,68,0.25); }
+        .toast.error .toast-icon { color: var(--rose); }
+        .toast.info { border-color: rgba(191,219,254,0.25); }
+        .toast.info .toast-icon { color: var(--cyan); }
+        @keyframes toast-in { from { opacity: 0; transform: translateX(40px) scale(0.95); } to { opacity: 1; transform: translateX(0) scale(1); } }
+        @keyframes toast-out { to { opacity: 0; transform: translateX(40px) scale(0.95); } }
+
+        /* ── Command Palette ── */
+        .cmd-overlay {
+            position: fixed; inset: 0; z-index: 300;
+            background: rgba(2,4,8,0.7); backdrop-filter: blur(8px);
+            display: flex; align-items: flex-start; justify-content: center;
+            padding-top: 18vh;
+            animation: fade-in 0.2s ease;
+        }
+        @keyframes fade-in { from { opacity: 0; } }
+        .cmd-box {
+            width: 560px; max-width: 92vw; border-radius: 18px;
+            background: rgba(10,15,28,0.97); border: 1px solid var(--border-hover);
+            box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 60px rgba(191,219,254,0.06);
+            overflow: hidden;
+            animation: cmd-pop 0.25s cubic-bezier(0.16,1,0.3,1);
+        }
+        @keyframes cmd-pop { from { opacity: 0; transform: scale(0.96) translateY(-10px); } }
+        .cmd-input-wrap {
+            display: flex; align-items: center; gap: 12px;
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+        }
+        .cmd-input-wrap svg { flex-shrink: 0; color: var(--text-muted); }
+        .cmd-input {
+            flex: 1; background: none; border: none; outline: none;
+            font-size: 1rem; color: var(--text-primary); font-family: 'Inter', sans-serif;
+        }
+        .cmd-input::placeholder { color: var(--text-muted); }
+        .cmd-kbd {
+            padding: 3px 8px; border-radius: 6px; font-size: 0.67rem;
+            background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+        }
+        .cmd-list { max-height: 320px; overflow-y: auto; padding: 8px; }
+        .cmd-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 14px; border-radius: 10px; cursor: pointer;
+            font-size: 0.87rem; color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+        .cmd-item:hover, .cmd-item.active {
+            background: rgba(191,219,254,0.08); color: var(--text-primary);
+        }
+        .cmd-item-icon { font-size: 1rem; opacity: 0.6; width: 24px; text-align: center; }
+        .cmd-item-label { flex: 1; }
+        .cmd-item-hint { font-size: 0.71rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .cmd-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.87rem; }
+
+        /* ── Force Graph ── */
+        .force-graph-wrap {
+            position: relative; width: 100%; height: 520px;
+            border-radius: var(--radius-sm); overflow: hidden;
+            background: radial-gradient(ellipse at center, rgba(10,15,28,0.9), rgba(4,8,16,0.98));
+        }
+        .force-graph-wrap svg { width: 100%; height: 100%; cursor: grab; }
+        .force-graph-wrap svg:active { cursor: grabbing; }
+        .fg-controls {
+            position: absolute; bottom: 16px; right: 16px;
+            display: flex; gap: 6px;
+        }
+        .fg-btn {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: rgba(10,15,28,0.9); border: 1px solid var(--border);
+            color: var(--text-secondary); font-size: 1.1rem;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s; backdrop-filter: blur(12px);
+        }
+        .fg-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(191,219,254,0.06); }
+        .fg-legend {
+            position: absolute; top: 16px; left: 16px;
+            display: flex; gap: 14px; padding: 8px 14px; border-radius: 10px;
+            background: rgba(4,8,16,0.85); backdrop-filter: blur(12px);
+            border: 1px solid var(--border); font-size: 0.73rem;
+        }
+        .fg-leg-item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+        .fg-leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .fg-tooltip {
+            position: absolute; pointer-events: none;
+            padding: 10px 14px; border-radius: 10px;
+            background: rgba(10,15,28,0.95); border: 1px solid var(--border-hover);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            font-size: 0.79rem; color: var(--text-primary);
+            backdrop-filter: blur(16px); z-index: 10;
+            transform: translate(-50%, -100%); margin-top: -12px;
+            white-space: nowrap; opacity: 0; transition: opacity 0.15s;
+        }
+        .fg-tooltip.show { opacity: 1; }
+        .fg-tooltip-label { font-weight: 600; margin-bottom: 3px; }
+        .fg-tooltip-meta { font-size: 0.69rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+        /* ── Copy Button ── */
+        .copy-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px; border-radius: 6px;
+            background: rgba(191,219,254,0.06); border: 1px solid transparent;
+            color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+            font-size: 0.75rem; flex-shrink: 0;
+        }
+        .copy-btn:hover { border-color: var(--border-hover); color: var(--cyan); background: rgba(191,219,254,0.1); }
+        .copy-btn.copied { color: var(--green); border-color: rgba(34,197,94,0.3); }
+
+        /* ── Collapsible Campaign ── */
+        .camp-toggle { cursor: pointer; user-select: none; }
+        .camp-details {
+            max-height: 0; overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.16,1,0.3,1), opacity 0.3s;
+            opacity: 0;
+        }
+        .camp-details.open { max-height: 400px; opacity: 1; }
+        .camp-chevron {
+            transition: transform 0.3s; display: inline-block; font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .camp-chevron.open { transform: rotate(90deg); }
+
+        /* ── Section Quick Nav (floating dots) ── */
+        .section-nav {
+            position: fixed; right: 20px; top: 50%; transform: translateY(-50%);
+            z-index: 40; display: flex; flex-direction: column; gap: 12px;
+        }
+        .section-nav-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: rgba(191,219,254,0.15); border: 1px solid rgba(191,219,254,0.2);
+            cursor: pointer; transition: all 0.3s; position: relative;
+        }
+        .section-nav-dot:hover { background: rgba(191,219,254,0.3); transform: scale(1.3); }
+        .section-nav-dot.active {
+            background: var(--cyan); border-color: var(--cyan);
+            box-shadow: 0 0 10px rgba(191,219,254,0.4);
+        }
+        .section-nav-dot::before {
+            content: attr(data-label); position: absolute; right: 22px; top: 50%;
+            transform: translateY(-50%); white-space: nowrap;
+            padding: 4px 10px; border-radius: 6px;
+            background: rgba(10,15,28,0.95); border: 1px solid var(--border);
+            font-size: 0.69rem; color: var(--text-secondary); letter-spacing: 0.5px;
+            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        .section-nav-dot:hover::before { opacity: 1; }
+        @media (max-width: 1200px) { .section-nav { display: none; } }
+
+        /* ── Drag-drop active state ── */
+        .file-zone.drag-over {
+            border-color: var(--cyan); background: rgba(191,219,254,0.04);
+            box-shadow: 0 0 30px rgba(191,219,254,0.08);
+        }
+        .file-zone.drag-over .drop-icon { transform: scale(1.2); color: var(--cyan); }
+
+        /* ── Kbd hint in nav ── */
+        .nav-kbd {
+            padding: 2px 7px; border-radius: 5px; font-size: 0.63rem;
+            background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+            color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+            margin-left: 6px;
+        }
+
+        /* ── Better mobile ── */
+        @media (max-width: 768px) {
+            .topnav { padding: 0 1rem; height: 56px; }
+            .content { padding: 1rem; }
+            .hero-title { font-size: 2.2rem; letter-spacing: 3px; }
+            .hero-sub { font-size: 0.79rem; letter-spacing: 2px; }
+            .export-btns { display: none; }
+            .nav-kbd { display: none; }
+            .force-graph-wrap { height: 360px; }
+            .g2 { grid-template-columns: 1fr; }
+            .intel-grid { grid-template-columns: 1fr; }
+            .viz-row { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .cmd-box { width: 95vw; }
+            .hub-spot { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* ── Tab slider animation ── */
+        .tabs-wrap { position: relative; display: inline-flex; }
+        .tab-slider {
+            position: absolute; bottom: 3px; height: 3px; border-radius: 2px;
+            background: linear-gradient(90deg, #bfdbfe, #60a5fa);
+            transition: left 0.3s cubic-bezier(0.16,1,0.3,1), width 0.3s cubic-bezier(0.16,1,0.3,1);
+            box-shadow: 0 0 8px rgba(191,219,254,0.3);
+        }
+
+        /* ── Mobile export drawer ── */
+        .mobile-export-btn {
+            display: none; padding: 6px 14px; border-radius: 8px; font-size: 0.73rem;
+            font-weight: 600; background: rgba(191,219,254,0.06); border: 1px solid var(--border);
+            color: var(--text-secondary); font-family: 'Inter', sans-serif; cursor: pointer;
+        }
+        @media (max-width: 768px) { .mobile-export-btn { display: inline-flex; } }
+    </style>
+</head>
+<body>
+<div class="bg-photo"></div>
+<div class="ambient">
+    <div class="ambient-grad"></div>
+    <div class="ambient-blob b1"></div>
+    <div class="ambient-blob b2"></div>
+    <div class="ambient-blob b3"></div>
+    <div class="noise"></div>
+    <div class="scanline"></div>
+    <svg viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <radialGradient id="radar-grad">
+                <stop offset="0%" stop-color="rgba(191,219,254,0.1)" />
+                <stop offset="100%" stop-color="transparent" />
+            </radialGradient>
+        </defs>
+
+        <g class="bg-hex" style="transform-origin: 960px 540px">
+            <polygon points="960,200 1060,258 1060,373 960,431 860,373 860,258" />
+            <polygon points="960,431 1060,489 1060,604 960,662 860,604 860,489" />
+            <polygon points="1100,315 1200,373 1200,488 1100,546 1000,488 1000,373" />
+            <polygon points="820,315 920,373 920,488 820,546 720,488 720,373" />
+            <polygon points="1100,546 1200,604 1200,719 1100,777 1000,719 1000,604" />
+            <polygon points="820,546 920,604 920,719 820,777 720,719 720,604" />
+        </g>
+        <g class="bg-hex r" style="transform-origin: 960px 540px">
+            <polygon points="500,100 580,146 580,239 500,285 420,239 420,146" />
+            <polygon points="1420,800 1500,846 1500,939 1420,985 1340,939 1340,846" />
+            <polygon points="1500,200 1580,246 1580,339 1500,385 1420,339 1420,246" />
+            <polygon points="400,700 480,746 480,839 400,885 320,839 320,746" />
+        </g>
+
+        <line class="bg-circuit-line" x1="0" y1="200" x2="600" y2="200" />
+        <line class="bg-circuit-line" x1="600" y1="200" x2="650" y2="300" />
+        <line class="bg-circuit-line" x1="650" y1="300" x2="900" y2="300" />
+        <line class="bg-circuit-line alt" x1="1920" y1="400" x2="1300" y2="400" />
+        <line class="bg-circuit-line alt" x1="1300" y1="400" x2="1250" y2="500" />
+        <line class="bg-circuit-line alt" x1="1250" y1="500" x2="1050" y2="500" />
+        <line class="bg-circuit-line" x1="200" y1="700" x2="700" y2="700" />
+        <line class="bg-circuit-line" x1="700" y1="700" x2="750" y2="600" />
+        <line class="bg-circuit-line alt" x1="1700" y1="800" x2="1200" y2="800" />
+        <line class="bg-circuit-line alt" x1="1200" y1="800" x2="1150" y2="700" />
+        <line class="bg-circuit-line" x1="0" y1="500" x2="400" y2="500" />
+        <line class="bg-circuit-line" x1="400" y1="500" x2="450" y2="450" />
+        <line class="bg-circuit-line alt" x1="1920" y1="650" x2="1500" y2="650" />
+        <line class="bg-circuit-line" x1="100" y1="900" x2="500" y2="900" />
+        <line class="bg-circuit-line alt" x1="1400" y1="150" x2="1920" y2="150" />
+
+        <circle class="bg-node" cx="600" cy="200" r="2" />
+        <circle class="bg-node" cx="650" cy="300" r="2" />
+        <circle class="bg-node" cx="900" cy="300" r="2" />
+        <circle class="bg-node" cx="1300" cy="400" r="2" />
+        <circle class="bg-node" cx="1250" cy="500" r="2" />
+        <circle class="bg-node" cx="1050" cy="500" r="2" />
+        <circle class="bg-node" cx="700" cy="700" r="2" />
+        <circle class="bg-node" cx="750" cy="600" r="2" />
+        <circle class="bg-node" cx="1200" cy="800" r="2" />
+        <circle class="bg-node" cx="1150" cy="700" r="2" />
+        <circle class="bg-node" cx="400" cy="500" r="2" />
+        <circle class="bg-node" cx="450" cy="450" r="2" />
+        <circle class="bg-node" cx="200" cy="200" r="2" />
+        <circle class="bg-node" cx="1500" cy="650" r="2" />
+        <circle class="bg-node" cx="500" cy="900" r="2" />
+        <circle class="bg-node" cx="1400" cy="150" r="2" />
+
+        <g style="transform: translate(1700px, 880px)">
+            <circle cx="0" cy="0" r="130" stroke="rgba(191,219,254,0.03)" stroke-width="0.5" fill="none" />
+            <circle cx="0" cy="0" r="90" stroke="rgba(191,219,254,0.025)" stroke-width="0.5" fill="none" />
+            <circle cx="0" cy="0" r="50" stroke="rgba(191,219,254,0.02)" stroke-width="0.5" fill="none" />
+            <line x1="0" y1="0" x2="0" y2="-130" stroke="rgba(191,219,254,0.025)" stroke-width="0.5" />
+            <line x1="0" y1="0" x2="130" y2="0" stroke="rgba(191,219,254,0.025)" stroke-width="0.5" />
+            <g class="bg-radar">
+                <path d="M0,0 L0,-130 A130,130 0 0,1 92,-92 Z" fill="url(#radar-grad)" />
+            </g>
+            <circle cx="35" cy="-55" r="2" fill="rgba(191,219,254,0.4)" class="bg-node" />
+            <circle cx="-65" cy="-25" r="1.5" fill="rgba(239,68,68,0.35)" class="bg-node" />
+            <circle cx="75" cy="45" r="1.5" fill="rgba(34,197,94,0.3)" class="bg-node" />
+        </g>
+
+        <circle class="bg-particle" cx="150" cy="1080" r="1.5" style="animation-duration: 18s; animation-delay: 0s" />
+        <circle class="bg-particle" cx="400" cy="1080" r="1" style="animation-duration: 22s; animation-delay: -5s" />
+        <circle class="bg-particle" cx="700" cy="1080" r="1.5" style="animation-duration: 20s; animation-delay: -8s" />
+        <circle class="bg-particle" cx="1000" cy="1080" r="1" style="animation-duration: 25s; animation-delay: -3s" />
+        <circle class="bg-particle" cx="1300" cy="1080" r="1.5" style="animation-duration: 19s; animation-delay: -12s" />
+        <circle class="bg-particle" cx="1600" cy="1080" r="1" style="animation-duration: 23s; animation-delay: -7s" />
+        <circle class="bg-particle" cx="1800" cy="1080" r="1.5" style="animation-duration: 21s; animation-delay: -15s" />
+        <circle class="bg-particle" cx="250" cy="1080" r="1" style="animation-duration: 24s; animation-delay: -10s" />
+        <circle class="bg-particle" cx="550" cy="1080" r="1.5" style="animation-duration: 17s; animation-delay: -2s" />
+        <circle class="bg-particle" cx="850" cy="1080" r="1" style="animation-duration: 26s; animation-delay: -14s" />
+
+        <line x1="600" y1="200" x2="1300" y2="400" stroke="rgba(191,219,254,0.015)" stroke-width="0.5" />
+        <line x1="650" y1="300" x2="1050" y2="500" stroke="rgba(224,242,254,0.015)" stroke-width="0.5" />
+        <line x1="700" y1="700" x2="1200" y2="800" stroke="rgba(191,219,254,0.015)" stroke-width="0.5" />
+        <line x1="400" y1="500" x2="750" y2="600" stroke="rgba(186,230,253,0.015)" stroke-width="0.5" />
+        <line x1="450" y1="450" x2="1150" y2="700" stroke="rgba(191,219,254,0.01)" stroke-width="0.5" />
+        <line x1="900" y1="300" x2="1250" y2="500" stroke="rgba(224,242,254,0.015)" stroke-width="0.5" />
+    </svg>
+</div>
+<div class="scroll-progress" id="scroll-prog"></div>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback, useMemo, createContext, useContext } = React;
+const API = window.location.hostname.includes('github.io')
+    ? 'https://ioc-correlation-engine.onrender.com'
+    : window.location.hostname.includes('onrender.com')
+        ? ''
+        : `${window.location.protocol}//${window.location.hostname}:8500`;
+
+/* ── Scroll progress tracker ── */
+(function() {
+    window.addEventListener('scroll', () => {
+        const el = document.getElementById('scroll-prog');
+        if (!el) return;
+        const h = document.documentElement.scrollHeight - window.innerHeight;
+        el.style.width = h > 0 ? ((window.scrollY / h) * 100) + '%' : '0%';
+    });
+})();
+
+/* ── Toast Context ── */
+const ToastCtx = createContext();
+function ToastProvider({ children }) {
+    const [toasts, setToasts] = useState([]);
+    const add = useCallback((msg, type = 'info') => {
+        const id = Date.now();
+        setToasts(t => [...t, { id, msg, type }]);
+        setTimeout(() => setToasts(t => t.map(x => x.id === id ? {...x, leaving: true} : x)), 2800);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3200);
+    }, []);
+    const icons = { success: '\u2713', error: '\u2717', info: '\u24D8' };
+    return (
+        <ToastCtx.Provider value={add}>
+            {children}
+            <div className="toast-container">
+                {toasts.map(t => (
+                    <div key={t.id} className={`toast ${t.type}${t.leaving ? ' leaving' : ''}`}>
+                        <span className="toast-icon">{icons[t.type]}</span>
+                        <span>{t.msg}</span>
+                    </div>
+                ))}
+            </div>
+        </ToastCtx.Provider>
+    );
+}
+function useToast() { return useContext(ToastCtx); }
+
+/* ── Scroll reveal hook ── */
+function useReveal(threshold = 0.15) {
+    const ref = useRef(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const obs = new IntersectionObserver(([e]) => {
+            if (e.isIntersecting) { el.classList.add('visible'); obs.unobserve(el); }
+        }, { threshold });
+        obs.observe(el);
+        return () => obs.disconnect();
+    }, []);
+    return ref;
+}
+
+/* ── Live clock hook ── */
+function useClock() {
+    const [time, setTime] = useState(new Date());
+    useEffect(() => {
+        const iv = setInterval(() => setTime(new Date()), 1000);
+        return () => clearInterval(iv);
+    }, []);
+    return time.toLocaleString('en-US', { hour12: false, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+const SAMPLE_JSON = `{
+  "iocs": [
+    {"value": "185.220.101.34", "type": "ip", "source": "siem-alert", "timestamp": "2026-02-14T08:00:00Z"},
+    {"value": "185.220.101.35", "type": "ip", "source": "siem-alert", "timestamp": "2026-02-14T08:15:00Z"},
+    {"value": "45.153.160.12", "type": "ip", "source": "firewall-log", "timestamp": "2026-02-14T09:00:00Z"},
+    {"value": "45.153.160.140", "type": "ip", "source": "firewall-log", "timestamp": "2026-02-14T09:30:00Z"},
+    {"value": "91.215.85.17", "type": "ip", "source": "ids-alert", "timestamp": "2026-02-13T22:00:00Z"},
+    {"value": "194.26.192.64", "type": "ip", "source": "threat-feed", "timestamp": "2026-02-13T18:00:00Z"},
+    {"value": "update-service.xyz", "type": "domain", "source": "dns-log", "timestamp": "2026-02-14T08:05:00Z"},
+    {"value": "cdn-static.top", "type": "domain", "source": "proxy-log", "timestamp": "2026-02-14T08:20:00Z"},
+    {"value": "api-gateway.cc", "type": "domain", "source": "dns-log", "timestamp": "2026-02-14T09:10:00Z"},
+    {"value": "mail-secure.info", "type": "domain", "source": "email-gateway", "timestamp": "2026-02-13T23:00:00Z"},
+    {"value": "login-portal.tk", "type": "domain", "source": "proxy-log", "timestamp": "2026-02-14T10:00:00Z"},
+    {"value": "cloud-sync.ru", "type": "domain", "source": "dns-log", "timestamp": "2026-02-13T20:00:00Z"},
+    {"value": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2", "type": "hash", "source": "edr-detection", "timestamp": "2026-02-14T08:10:00Z"},
+    {"value": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3", "type": "hash", "source": "sandbox-analysis", "timestamp": "2026-02-14T08:30:00Z"},
+    {"value": "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4", "type": "hash", "source": "edr-detection", "timestamp": "2026-02-14T09:15:00Z"},
+    {"value": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5", "type": "hash", "source": "malware-repo", "timestamp": "2026-02-13T21:00:00Z"},
+    {"value": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6", "type": "hash", "source": "threat-feed", "timestamp": "2026-02-14T07:00:00Z"},
+    {"value": "f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7", "type": "hash", "source": "edr-detection", "timestamp": "2026-02-14T11:00:00Z"}
+  ]
+}`;
+
+const SAMPLE_TEXT = `185.220.101.34
+185.220.101.35
+45.153.160.12
+update-service.xyz
+cdn-static.top
+api-gateway.cc
+a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2
+b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3`;
+
+/* ── Animated counter hook ── */
+function useCounter(target, duration = 800) {
+    const [val, setVal] = useState(0);
+    useEffect(() => {
+        const t0 = performance.now();
+        const num = typeof target === 'number' ? target : parseFloat(target) || 0;
+        const isFloat = !Number.isInteger(num);
+        const step = (now) => {
+            const p = Math.min((now - t0) / duration, 1);
+            const ease = 1 - Math.pow(1 - p, 3);
+            setVal(isFloat ? (num * ease).toFixed(3) : Math.round(num * ease));
+            if (p < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    }, [target, duration]);
+    return val;
+}
+
+/* ── SVG donut chart ── */
+function Donut({ data, size = 130 }) {
+    const total = data.reduce((s, d) => s + d.value, 0);
+    if (!total) return null;
+    const r = size / 2, stroke = r * 0.38;
+    const mid = r, cr = r - stroke / 2;
+    const uid = useMemo(() => Math.random().toString(36).slice(2, 8), []);
+    let cumAngle = -Math.PI / 2;
+    const gap = 0.04;
+
+    const lighten = (c) => {
+        const m = { '#bfdbfe':'#e8f4ff', '#e0f2fe':'#f0f9ff', '#60a5fa':'#93c5fd',
+                     'var(--red)':'#f87171', 'var(--amber)':'#fbbf24',
+                     'var(--blue)':'#bfdbfe', 'var(--green)':'#4ade80',
+                     '#93c5fd':'#dbeafe' };
+        return m[c] || '#ffffff';
+    };
+
+    /* Single segment → full circle, no arc gap */
+    if (data.length === 1) {
+        const d = data[0];
+        return (
+            <svg width={size} height={size}>
+                <defs>
+                    <linearGradient id={`dg-${uid}-0`} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={lighten(d.color)} />
+                        <stop offset="100%" stopColor={d.color} />
+                    </linearGradient>
+                </defs>
+                <circle cx={mid} cy={mid} r={cr} fill="none" stroke="rgba(191,219,254,0.06)" strokeWidth={stroke} />
+                <circle cx={mid} cy={mid} r={cr} fill="none" stroke={`url(#dg-${uid}-0)`} strokeWidth={stroke}
+                    style={{ transition: 'all 0.5s ease' }} />
+            </svg>
+        );
+    }
+
+    const arcs = data.map((d, i) => {
+        const angle = Math.max(0, (d.value / total) * Math.PI * 2 - gap);
+        const start = cumAngle + gap / 2;
+        cumAngle += (d.value / total) * Math.PI * 2;
+        const end = start + angle;
+        const x1 = mid + cr * Math.cos(start);
+        const y1 = mid + cr * Math.sin(start);
+        const x2 = mid + cr * Math.cos(end);
+        const y2 = mid + cr * Math.sin(end);
+        const large = angle > Math.PI ? 1 : 0;
+        return { ...d, path: `M ${x1} ${y1} A ${cr} ${cr} 0 ${large} 1 ${x2} ${y2}`, x1, y1, x2, y2, idx: i };
+    });
+    return (
+        <svg width={size} height={size}>
+            <defs>
+                {arcs.map((a, i) => (
+                    <linearGradient key={i} id={`dg-${uid}-${i}`} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor={lighten(a.color)} />
+                        <stop offset="100%" stopColor={a.color} />
+                    </linearGradient>
+                ))}
+            </defs>
+            <circle cx={mid} cy={mid} r={cr} fill="none" stroke="rgba(191,219,254,0.06)" strokeWidth={stroke} />
+            {arcs.map((a, i) => (
+                <path key={i} d={a.path} fill="none" stroke={`url(#dg-${uid}-${i})`} strokeWidth={stroke}
+                    strokeLinecap="round" style={{ transition: 'all 0.5s ease' }} />
+            ))}
+        </svg>
+    );
+}
+
+/* ── Brain Network Logo ── */
+function BrainLogo({ size = 180 }) {
+    const nodes = [
+        /* Left lobe */
+        [68, 10, false],[50, 24, false],[82, 20, false],
+        [34, 40, false],[58, 36, false],[82, 34, false],
+        [24, 60, true], [48, 56, false],[74, 50, false],
+        [28, 80, false],[54, 74, false],[78, 68, false],
+        [40, 96, true], [62, 90, false],[80, 84, false],
+        [54, 108, false],[70, 104, false],
+        /* Right lobe (mirrored around x=100) */
+        [132, 10, false],[150, 24, false],[118, 20, false],
+        [166, 40, false],[142, 36, false],[118, 34, false],
+        [176, 60, true], [152, 56, false],[126, 50, false],
+        [172, 80, false],[146, 74, false],[122, 68, false],
+        [160, 96, true], [138, 90, false],[120, 84, false],
+        [146, 108, false],[130, 104, false],
+        /* Center bridge */
+        [100, 44, false],[100, 68, false],[100, 92, false],[100, 114, false],
+        /* Extra detail nodes */
+        [42, 14, false],[158, 14, false],
+        [16, 44, false],[184, 44, false],
+        [90, 60, false],[110, 60, false],
+        [90, 80, false],[110, 80, false],
+    ];
+    const edges = [
+        /* Left internal */
+        [0,1],[0,2],[1,3],[1,4],[2,4],[2,5],[3,6],[3,7],[4,7],[4,8],[5,8],
+        [6,9],[7,9],[7,10],[8,10],[8,11],[9,12],[10,12],[10,13],[11,13],[11,14],
+        [12,15],[13,15],[13,16],[14,16],
+        /* Right internal */
+        [17,18],[17,19],[18,20],[18,21],[19,21],[19,22],[20,23],[20,24],[21,24],[21,25],[22,25],
+        [23,26],[24,26],[24,27],[25,27],[25,28],[26,29],[27,29],[27,30],[28,30],[28,31],
+        [29,32],[30,32],[30,33],[31,33],
+        /* Center bridge */
+        [5,34],[22,34],[8,34],[25,34],[8,42],[25,43],
+        [11,35],[28,35],[34,35],[11,44],[28,45],
+        [14,36],[31,36],[35,36],[14,44],[31,45],
+        [16,37],[33,37],[36,37],
+        [42,43],[44,45],
+        /* Outer detail */
+        [0,38],[1,38],[17,39],[18,39],
+        [6,40],[3,40],[23,41],[20,41],
+    ];
+    return (
+        <svg viewBox="0 0 200 124" width={size} height={size * 0.62} style={{filter:'drop-shadow(0 0 12px rgba(191,219,254,0.3))'}}>
+            <defs>
+                <filter id="lg"><feGaussianBlur stdDeviation="1.5" result="b"/>
+                    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+                <radialGradient id="ng" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#e0f2fe"/>
+                    <stop offset="100%" stopColor="#bfdbfe"/>
+                </radialGradient>
+            </defs>
+            <g opacity="0.5">
+                {edges.map(([a,b], i) => (
+                    <line key={'e'+i} x1={nodes[a][0]} y1={nodes[a][1]} x2={nodes[b][0]} y2={nodes[b][1]}
+                        stroke="#60a5fa" strokeWidth="0.7" />
+                ))}
+            </g>
+            <g>
+                {nodes.map(([x,y,accent], i) => (
+                    <circle key={'n'+i} cx={x} cy={y} r={accent ? 3.8 : 2.4}
+                        fill={accent ? '#ef4444' : 'url(#ng)'}
+                        filter="url(#lg)" />
+                ))}
+            </g>
+        </svg>
+    );
+}
+
+/* ── Mini gauge ── */
+function MiniGauge({ value, size = 48 }) {
+    const r = 19, cx = size / 2, cy = size / 2, c = 2 * Math.PI * r;
+    const pct = value / 100;
+    const color = value >= 85 ? 'var(--red)' : value >= 65 ? 'var(--amber)' : value >= 40 ? 'var(--blue)' : 'var(--green)';
+    return (
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="4" />
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth="4"
+                strokeDasharray={c} strokeDashoffset={c * (1 - pct)} strokeLinecap="round"
+                style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.16,1,0.3,1)', filter: `drop-shadow(0 0 4px ${color})` }} />
+            <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="var(--text-primary)"
+                fontSize="10" fontWeight="800" fontFamily="'JetBrains Mono'" style={{ transform: 'rotate(90deg)', transformOrigin: 'center' }}>
+                {Math.round(value)}
+            </text>
+        </svg>
+    );
+}
+
+/* ── Copy to clipboard button ── */
+function CopyBtn({ text }) {
+    const [copied, setCopied] = useState(false);
+    const toast = useToast();
+    const handle = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            toast('Copied to clipboard', 'success');
+            setTimeout(() => setCopied(false), 1500);
+        } catch { toast('Copy failed', 'error'); }
+    };
+    return (
+        <button className={`copy-btn${copied ? ' copied' : ''}`} onClick={handle} title="Copy">
+            {copied ? '\u2713' : '\u2398'}
+        </button>
+    );
+}
+
+/* ── Command Palette ── */
+function CommandPalette({ open, onClose, onAction, hasResult }) {
+    const [query, setQuery] = useState('');
+    const [activeIdx, setActiveIdx] = useState(0);
+    const inputRef = useRef(null);
+
+    const actions = useMemo(() => {
+        const items = [
+            { id: 'analyze', icon: '\u25B6', label: 'Run Analysis', hint: 'Enter', section: 'Actions' },
+            { id: 'json-tab', icon: '{ }', label: 'Switch to JSON input', hint: '', section: 'Navigate' },
+            { id: 'text-tab', icon: '\u2261', label: 'Switch to Text input', hint: '', section: 'Navigate' },
+            { id: 'file-tab', icon: '\u21E7', label: 'Switch to File upload', hint: '', section: 'Navigate' },
+        ];
+        if (hasResult) {
+            items.push(
+                { id: 'export-json', icon: '\u2913', label: 'Export JSON', hint: '', section: 'Export' },
+                { id: 'export-csv', icon: '\u2913', label: 'Export Campaigns CSV', hint: '', section: 'Export' },
+                { id: 'scroll-graph', icon: '\u25CE', label: 'Jump to Network Graph', hint: '', section: 'Navigate' },
+                { id: 'scroll-campaigns', icon: '\u2691', label: 'Jump to Campaigns', hint: '', section: 'Navigate' },
+                { id: 'scroll-report', icon: '\u2637', label: 'Jump to Report', hint: '', section: 'Navigate' },
+            );
+        }
+        return items;
+    }, [hasResult]);
+
+    const filtered = query
+        ? actions.filter(a => a.label.toLowerCase().includes(query.toLowerCase()))
+        : actions;
+
+    useEffect(() => { if (open) { setQuery(''); setActiveIdx(0); setTimeout(() => inputRef.current?.focus(), 50); } }, [open]);
+    useEffect(() => { setActiveIdx(0); }, [query]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, filtered.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+            else if (e.key === 'Enter' && filtered[activeIdx]) { e.preventDefault(); onAction(filtered[activeIdx].id); onClose(); }
+            else if (e.key === 'Escape') { onClose(); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [open, filtered, activeIdx, onAction, onClose]);
+
+    if (!open) return null;
+    return (
+        <div className="cmd-overlay" onClick={onClose}>
+            <div className="cmd-box" onClick={e => e.stopPropagation()}>
+                <div className="cmd-input-wrap">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    <input ref={inputRef} className="cmd-input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Type a command..." />
+                    <span className="cmd-kbd">ESC</span>
+                </div>
+                <div className="cmd-list">
+                    {filtered.length === 0 && <div className="cmd-empty">No matching commands</div>}
+                    {filtered.map((a, i) => (
+                        <div key={a.id} className={`cmd-item${i === activeIdx ? ' active' : ''}`}
+                             onClick={() => { onAction(a.id); onClose(); }}
+                             onMouseEnter={() => setActiveIdx(i)}>
+                            <span className="cmd-item-icon">{a.icon}</span>
+                            <span className="cmd-item-label">{a.label}</span>
+                            {a.hint && <span className="cmd-item-hint">{a.hint}</span>}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ── Force-Directed Graph ── */
+function ForceGraph({ graphData }) {
+    const svgRef = useRef(null);
+    const containerRef = useRef(null);
+    const [tooltip, setTooltip] = useState(null);
+    const simRef = useRef(null);
+
+    const typeCol = { ip: '#3b82f6', domain: '#22c55e', hash: '#a78bfa' };
+    const repColor = (rep) => rep >= 80 ? '#ef4444' : rep >= 60 ? '#f59e0b' : rep >= 40 ? '#bfdbfe' : '#22c55e';
+
+    useEffect(() => {
+        if (!graphData || !svgRef.current) return;
+        const svg = d3.select(svgRef.current);
+        svg.selectAll('*').remove();
+
+        const container = containerRef.current;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+        const nodes = graphData.nodes.map(n => ({ ...n }));
+        const edges = graphData.edges.map(e => ({
+            source: e.source.id || e.source,
+            target: e.target.id || e.target,
+            weight: e.weight,
+            relationship_type: e.relationship_type,
+        }));
+
+        const g = svg.append('g');
+
+        /* Zoom */
+        const zoom = d3.zoom().scaleExtent([0.3, 4]).on('zoom', (e) => g.attr('transform', e.transform));
+        svg.call(zoom);
+
+        /* Edge glow filter */
+        const defs = svg.append('defs');
+        const glow = defs.append('filter').attr('id', 'edge-glow');
+        glow.append('feGaussianBlur').attr('stdDeviation', '2').attr('result', 'blur');
+        const merge = glow.append('feMerge');
+        merge.append('feMergeNode').attr('in', 'blur');
+        merge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+        /* Node glow filter */
+        const nGlow = defs.append('filter').attr('id', 'node-glow');
+        nGlow.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'blur');
+        const nMerge = nGlow.append('feMerge');
+        nMerge.append('feMergeNode').attr('in', 'blur');
+        nMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+        /* Links */
+        const link = g.append('g')
+            .selectAll('line').data(edges).join('line')
+            .attr('stroke', 'rgba(191,219,254,0.15)')
+            .attr('stroke-width', d => 1 + d.weight * 3)
+            .attr('filter', 'url(#edge-glow)');
+
+        /* Nodes */
+        const node = g.append('g')
+            .selectAll('circle').data(nodes).join('circle')
+            .attr('r', d => 6 + (d.reputation || 30) / 12)
+            .attr('fill', d => typeCol[d.type] || '#bfdbfe')
+            .attr('stroke', d => repColor(d.reputation || 30))
+            .attr('stroke-width', 2)
+            .attr('filter', 'url(#node-glow)')
+            .style('cursor', 'pointer');
+
+        /* Labels */
+        const label = g.append('g')
+            .selectAll('text').data(nodes).join('text')
+            .text(d => d.type === 'hash' ? d.label.substring(0, 10) + '..' : d.label)
+            .attr('font-size', '9px')
+            .attr('font-family', "'JetBrains Mono', monospace")
+            .attr('fill', 'rgba(240,249,255,0.6)')
+            .attr('text-anchor', 'middle')
+            .attr('dy', d => -(10 + (d.reputation || 30) / 12));
+
+        /* Tooltip */
+        node.on('mouseenter', (event, d) => {
+            const rect = container.getBoundingClientRect();
+            const [mx, my] = d3.pointer(event, container);
+            setTooltip({ x: mx, y: my, node: d });
+            d3.select(event.target).transition().duration(200).attr('r', d => 10 + (d.reputation || 30) / 12);
+        }).on('mouseleave', (event, d) => {
+            setTooltip(null);
+            d3.select(event.target).transition().duration(200).attr('r', d => 6 + (d.reputation || 30) / 12);
+        });
+
+        /* Drag */
+        const drag = d3.drag()
+            .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+            .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+            .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; });
+        node.call(drag);
+
+        /* Simulation */
+        const sim = d3.forceSimulation(nodes)
+            .force('link', d3.forceLink(edges).id(d => d.id).distance(d => 120 - d.weight * 60).strength(d => 0.3 + d.weight * 0.4))
+            .force('charge', d3.forceManyBody().strength(-180))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(d => 14 + (d.reputation || 30) / 12))
+            .force('x', d3.forceX(width / 2).strength(0.04))
+            .force('y', d3.forceY(height / 2).strength(0.04));
+
+        simRef.current = sim;
+
+        sim.on('tick', () => {
+            link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+            node.attr('cx', d => d.x).attr('cy', d => d.y);
+            label.attr('x', d => d.x).attr('y', d => d.y);
+        });
+
+        /* Initial zoom to fit */
+        setTimeout(() => {
+            svg.transition().duration(800).call(zoom.transform, d3.zoomIdentity.translate(width*0.05, height*0.05).scale(0.9));
+        }, 1200);
+
+        return () => { sim.stop(); };
+    }, [graphData]);
+
+    const handleZoom = (dir) => {
+        const svg = d3.select(svgRef.current);
+        const zoom = d3.zoom().scaleExtent([0.3, 4]);
+        svg.transition().duration(300).call(zoom.scaleBy, dir === 'in' ? 1.4 : 0.7);
+    };
+    const handleReset = () => {
+        if (simRef.current) { simRef.current.alpha(0.5).restart(); }
+    };
+
+    if (!graphData || !graphData.nodes.length) return null;
+
+    return (
+        <div className="force-graph-wrap" ref={containerRef}>
+            <svg ref={svgRef} />
+            <div className="fg-legend">
+                <div className="fg-leg-item"><div className="fg-leg-dot" style={{background:'#bfdbfe'}} /> IP</div>
+                <div className="fg-leg-item"><div className="fg-leg-dot" style={{background:'#e0f2fe'}} /> Domain</div>
+                <div className="fg-leg-item"><div className="fg-leg-dot" style={{background:'#60a5fa'}} /> Hash</div>
+            </div>
+            <div className="fg-controls">
+                <button className="fg-btn" onClick={() => handleZoom('in')} title="Zoom In">+</button>
+                <button className="fg-btn" onClick={() => handleZoom('out')} title="Zoom Out">&minus;</button>
+                <button className="fg-btn" onClick={handleReset} title="Re-simulate">&orarr;</button>
+            </div>
+            {tooltip && (
+                <div className={`fg-tooltip${tooltip ? ' show' : ''}`} style={{left: tooltip.x, top: tooltip.y}}>
+                    <div className="fg-tooltip-label">{tooltip.node.label}</div>
+                    <div className="fg-tooltip-meta">{tooltip.node.type.toUpperCase()} &middot; rep: {tooltip.node.reputation} &middot; cluster {(tooltip.node.group||0)+1}</div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ── Section Quick Nav ── */
+function SectionNav({ sections }) {
+    const [active, setActive] = useState('');
+    useEffect(() => {
+        const handler = () => {
+            for (let i = sections.length - 1; i >= 0; i--) {
+                const el = document.getElementById(sections[i].id);
+                if (el && el.getBoundingClientRect().top < 300) { setActive(sections[i].id); break; }
+            }
+        };
+        window.addEventListener('scroll', handler, { passive: true });
+        return () => window.removeEventListener('scroll', handler);
+    }, [sections]);
+    return (
+        <div className="section-nav">
+            {sections.map(s => (
+                <div key={s.id} className={`section-nav-dot${active === s.id ? ' active' : ''}`}
+                     data-label={s.label}
+                     onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+            ))}
+        </div>
+    );
+}
+
+/* ── Stat card with animated counter ── */
+function StatCard({ icon, value, label, color, cssClass }) {
+    const animated = useCounter(value);
+    return (
+        <div className={`stat ${cssClass}`}>
+            <div className="stat-icon" style={{ color }}>{icon}</div>
+            <div className="stat-val" style={{ color }}>{animated}</div>
+            <div className="stat-lbl">{label}</div>
+        </div>
+    );
+}
+
+/* ── Threat Intelligence Panel ── */
+function ThreatIntelPanel({ data, metrics, relationships }) {
+    const typeCol = { ip: '#3b82f6', domain: '#22c55e', hash: '#a78bfa' };
+    const typeIcon = { ip: '\u{1F310}', domain: '\u{1F517}', hash: '\u{1F512}' };
+    const relLabel = {
+        shared_asn: 'Shared ASN', shared_hosting: 'Hosting', shared_ssl_issuer: 'SSL',
+        shared_ip: 'Shared IP', shared_malware_family: 'Malware', shared_c2_domain: 'C2',
+        time_proximity: 'Time Prox.'
+    };
+
+    if (!data || !data.nodes.length) return null;
+
+    /* Build connection map */
+    const connMap = {};
+    data.edges.forEach(e => {
+        const s = e.source.id || e.source, t = e.target.id || e.target;
+        connMap[s] = (connMap[s] || 0) + 1;
+        connMap[t] = (connMap[t] || 0) + 1;
+    });
+
+    /* Centrality map */
+    const centralMap = {};
+    if (metrics && metrics.top_central_nodes) {
+        metrics.top_central_nodes.forEach(n => { centralMap[n.node] = n.centrality; });
+    }
+
+    /* Sort edges by weight for top correlations */
+    const topEdges = [...data.edges].sort((a, b) => b.weight - a.weight).slice(0, 10);
+
+    /* Build node lookup */
+    const nodeMap = {};
+    data.nodes.forEach(n => { nodeMap[n.id] = n; });
+
+    /* Sort nodes: high-reputation first */
+    const sortedNodes = [...data.nodes].sort((a, b) => b.reputation - a.reputation);
+
+    /* IOC type filter */
+    const [iocFilter, setIocFilter] = React.useState('all');
+    const filteredNodes = iocFilter === 'all' ? sortedNodes : sortedNodes.filter(n => n.type === iocFilter);
+    const typeCounts = { all: data.nodes.length, ip: data.nodes.filter(n => n.type === 'ip').length, domain: data.nodes.filter(n => n.type === 'domain').length, hash: data.nodes.filter(n => n.type === 'hash').length };
+
+    /* Timeline data */
+    const nodesWithTime = data.nodes.filter(n => n.timestamp).map(n => ({
+        ...n, ts: new Date(n.timestamp).getTime()
+    }));
+    const minTs = Math.min(...nodesWithTime.map(n => n.ts));
+    const maxTs = Math.max(...nodesWithTime.map(n => n.ts));
+    const tsRange = maxTs - minTs || 1;
+
+    const repColor = (rep) => rep >= 80 ? 'var(--red)' : rep >= 60 ? 'var(--amber)' : rep >= 40 ? 'var(--accent)' : 'var(--green)';
+
+    return (
+    <div className="intel-wrap">
+        {/* IOC Intelligence Cards */}
+        <div className="card" style={{marginBottom:12}}>
+            <div className="card-head">
+                <div className="card-title"><div className="dot" /> IOC Intelligence</div>
+                <div className="card-meta">{data.nodes.length} indicators analyzed</div>
+            </div>
+            <div style={{display:'flex', gap:6, padding:'0 20px 12px', flexWrap:'wrap'}}>
+                {[{key:'all', label:'All', icon:null}, {key:'ip', label:'IP', icon:typeIcon.ip}, {key:'domain', label:'Domain', icon:typeIcon.domain}, {key:'hash', label:'Hash', icon:typeIcon.hash}].map(f => (
+                    <button key={f.key} onClick={() => setIocFilter(f.key)}
+                        style={{padding:'5px 14px', borderRadius:20, border: iocFilter === f.key ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.08)',
+                            background: iocFilter === f.key ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.03)',
+                            color: iocFilter === f.key ? 'var(--accent)' : 'var(--text-muted)',
+                            cursor:'pointer', fontSize:'0.78rem', fontWeight:600, transition:'all 0.2s', display:'flex', alignItems:'center', gap:5}}>
+                        {f.icon && <span style={{fontSize:'0.72rem'}}>{f.icon}</span>}{f.label} <span style={{opacity:0.6, fontWeight:400, marginLeft:2}}>({typeCounts[f.key]})</span>
+                    </button>
+                ))}
+            </div>
+            <div className="ioc-cards">
+                {filteredNodes.map(n => {
+                    const conns = connMap[n.id] || 0;
+                    const cent = centralMap[n.id];
+                    return (
+                        <div key={n.id} className={`ioc-node${n.reputation > 70 ? ' high-risk' : ''}`}>
+                            <div className="ioc-node-head">
+                                <span className={`ioc-type-badge ${n.type}`}>{typeIcon[n.type]} {n.type}</span>
+                                <div className="ioc-rep-dot" style={{background: repColor(n.reputation), color: repColor(n.reputation)}} title={`Reputation: ${n.reputation}`} />
+                            </div>
+                            <div style={{display:'flex', alignItems:'center', gap:6}}>
+                                <div className="ioc-val" style={{flex:1}}>{n.type === 'hash' ? n.label.substring(0, 24) + '...' : n.label}</div>
+                                <CopyBtn text={n.label} />
+                            </div>
+                            <div style={{marginBottom:8}}>
+                                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                                    <div style={{flex:1, height:4, background:'var(--bg-base)', borderRadius:2, overflow:'hidden'}}>
+                                        <div style={{width:`${n.reputation}%`, height:'100%', borderRadius:2, background: repColor(n.reputation), transition:'width 0.8s ease'}} />
+                                    </div>
+                                    <span style={{fontFamily:"'JetBrains Mono'", fontSize:'0.69rem', fontWeight:700, color: repColor(n.reputation)}}>{n.reputation}</span>
+                                </div>
+                            </div>
+                            <div className="ioc-meta">
+                                <span>{conns} <strong>links</strong></span>
+                                <span>cluster <strong>{n.group + 1}</strong></span>
+                                {cent !== undefined && <span>centrality <strong>{(cent*100).toFixed(0)}%</strong></span>}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+
+        <div className="intel-grid">
+            {/* Top Correlations */}
+            <div className="card">
+                <div className="card-head">
+                    <div className="card-title"><div className="dot" style={{background:'var(--teal)', boxShadow:'0 0 8px rgba(186,230,253,0.3)'}} /> Strongest Correlations</div>
+                    <div className="card-meta">by weight</div>
+                </div>
+                <div className="corr-list">
+                    {topEdges.map((e, i) => {
+                        const sId = e.source.id || e.source, tId = e.target.id || e.target;
+                        const sNode = nodeMap[sId], tNode = nodeMap[tId];
+                        return (
+                            <div key={i} className="corr-pair">
+                                <span className="corr-src" title={sNode?.label}>{sNode?.label || sId}</span>
+                                <div className="corr-arrow">
+                                    <div className="corr-line" style={{opacity: 0.4 + e.weight * 0.6}} />
+                                </div>
+                                <span className="corr-tgt" title={tNode?.label}>{tNode?.label || tId}</span>
+                                <span className="corr-type">{relLabel[e.relationship_type] || e.relationship_type}</span>
+                                <span className="corr-weight">{(e.weight * 100).toFixed(1)}%</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Hub Spotlight */}
+            <div className="card">
+                <div className="card-head">
+                    <div className="card-title"><div className="dot" style={{background:'var(--purple)', boxShadow:'0 0 8px rgba(96,165,250,0.3)'}} /> Hub Spotlight</div>
+                    <div className="card-meta">degree centrality</div>
+                </div>
+                <div className="hub-spot">
+                    {(metrics?.top_central_nodes || []).map((n, i) => {
+                        const nd = nodeMap[n.node];
+                        const conns = connMap[n.node] || 0;
+                        return (
+                            <div key={i} className="hub-node">
+                                <div className="hub-rank-badge">#{i + 1}</div>
+                                <div style={{marginTop:8}}>
+                                    <MiniGauge value={n.centrality * 100} size={56} />
+                                </div>
+                                <div className="hub-name">{nd?.type === 'hash' ? n.node.substring(0, 16) + '...' : n.node}</div>
+                                <div className="hub-detail">
+                                    {conns} connections &middot; {nd?.type?.toUpperCase() || '?'}
+                                </div>
+                                <div style={{marginTop:6, display:'inline-flex', alignItems:'center', gap:4}}>
+                                    <div style={{width:6, height:6, borderRadius:'50%', background: nd ? typeCol[nd.type] : '#bfdbfe'}} />
+                                    <span style={{fontSize:'0.65rem', color:'var(--text-muted)'}}>Cluster {nd?.group != null ? nd.group + 1 : '?'}</span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+
+        {/* Activity Timeline – adaptive fit */}
+        {nodesWithTime.length > 1 && (() => {
+            const sorted = [...nodesWithTime].sort((a, b) => a.ts - b.ts);
+            const count = sorted.length;
+            return (
+            <div className="card" style={{marginTop:12}}>
+                <div className="card-head">
+                    <div className="card-title"><div className="dot" style={{background:'var(--green)', boxShadow:'0 0 8px rgba(34,197,94,0.3)'}} /> Activity Timeline</div>
+                    <div className="card-meta">{new Date(minTs).toLocaleDateString()} &mdash; {new Date(maxTs).toLocaleDateString()}</div>
+                </div>
+                <div style={{padding:'20px 16px 10px'}}>
+                    <div style={{display:'grid', gridTemplateColumns:`repeat(${count}, 1fr)`, position:'relative', gap:0}}>
+                        {/* horizontal line */}
+                        <div style={{position:'absolute', top:'50%', left:0, right:0, height:1, background:'var(--border)', zIndex:0}} />
+                        {sorted.map((n, i) => {
+                            const stemH = 24 + (i % 3) * 10;
+                            const maxChars = count > 14 ? 8 : count > 10 ? 10 : 14;
+                            const shortLabel = n.type === 'hash' ? n.label.substring(0, Math.min(maxChars, 8)) + '..' : n.label.length > maxChars ? n.label.substring(0, maxChars - 2) + '..' : n.label;
+                            const time = new Date(n.ts).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', hour12:false});
+                            return (
+                                <div key={n.id} style={{display:'flex', flexDirection:'column', alignItems:'center', position:'relative', zIndex:1, cursor:'pointer'}}
+                                     onClick={() => { navigator.clipboard.writeText(n.label); toast('Copied: ' + n.label, 'success'); }}
+                                     title={'Click to copy: ' + n.label}>
+                                    <div style={{fontSize:'0.58rem', color:'var(--text-muted)', fontFamily:"'JetBrains Mono',monospace", marginBottom:3, opacity:0.7}}>{time}</div>
+                                    <div style={{width:1, height:stemH, background:typeCol[n.type], opacity:0.35}} />
+                                    <div style={{width:9, height:9, borderRadius:'50%', background:typeCol[n.type], boxShadow:`0 0 8px ${typeCol[n.type]}`, flexShrink:0, transition:'transform 0.2s, box-shadow 0.2s'}}
+                                         onMouseEnter={e => { e.currentTarget.style.transform='scale(1.6)'; e.currentTarget.style.boxShadow=`0 0 16px ${typeCol[n.type]}`; }}
+                                         onMouseLeave={e => { e.currentTarget.style.transform='scale(1)'; e.currentTarget.style.boxShadow=`0 0 8px ${typeCol[n.type]}`; }} />
+                                    <div style={{fontSize:'0.6rem', color:'var(--text-secondary)', fontFamily:"'JetBrains Mono',monospace", marginTop:6, textAlign:'center', lineHeight:1.3, wordBreak:'break-all', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'100%', padding:'0 2px'}}>
+                                        {shortLabel}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="tl-legend" style={{paddingBottom:14}}>
+                    <div className="tl-legend-item"><div className="tl-legend-dot" style={{background:'#3b82f6'}} /> IP</div>
+                    <div className="tl-legend-item"><div className="tl-legend-dot" style={{background:'#22c55e'}} /> Domain</div>
+                    <div className="tl-legend-item"><div className="tl-legend-dot" style={{background:'#a78bfa'}} /> Hash</div>
+                </div>
+            </div>
+            );
+        })()}
+    </div>
+    );
+}
+
+/* ── Reveal wrapper ── */
+function Reveal({ children, className = '', delay = 0 }) {
+    const ref = useReveal();
+    const delayClass = delay > 0 ? ` reveal-d${delay}` : '';
+    return <div ref={ref} className={`reveal${delayClass} ${className}`}>{children}</div>;
+}
+
+/* ── App ── */
+function App() {
+    const [tab, setTab] = useState('json');
+    const [jsonInput, setJsonInput] = useState(SAMPLE_JSON);
+    const [textInput, setTextInput] = useState(SAMPLE_TEXT);
+    const [loading, setLoading] = useState(false);
+    const [loadStep, setLoadStep] = useState(0);
+    const [result, setResult] = useState(null);
+    const [error, setError] = useState(null);
+    const [cmdOpen, setCmdOpen] = useState(false);
+    const [expandedCamps, setExpandedCamps] = useState({});
+    const [dragOver, setDragOver] = useState(false);
+    const fileRef = useRef(null);
+    const clock = useClock();
+    const toast = useToast();
+
+    /* Ctrl+K command palette */
+    useEffect(() => {
+        const handler = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setCmdOpen(o => !o); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    const handleCmdAction = useCallback((id) => {
+        if (id === 'analyze') analyze();
+        else if (id === 'json-tab') setTab('json');
+        else if (id === 'text-tab') setTab('text');
+        else if (id === 'file-tab') setTab('file');
+        else if (id === 'export-json') window.open(`${API}/api/v1/export/json`, '_blank');
+        else if (id === 'export-csv') window.open(`${API}/api/v1/export/csv/campaigns`, '_blank');
+        else if (id?.startsWith('scroll-')) {
+            const target = id.replace('scroll-', 'sec-');
+            document.getElementById(target)?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [tab, jsonInput, textInput]);
+
+    const toggleCamp = (id) => setExpandedCamps(prev => ({ ...prev, [id]: !prev[id] }));
+
+    useEffect(() => {
+        if (result && result.campaigns) {
+            const all = {};
+            result.campaigns.forEach(c => { all[c.campaign_id] = true; });
+            setExpandedCamps(all);
+        }
+    }, [result]);
+
+    const analyze = async () => {
+        setLoading(true); setError(null); setLoadStep(0);
+        const steps = [0, 1, 2, 3, 4];
+        const stepTimer = setInterval(() => setLoadStep(s => Math.min(s + 1, 4)), 600);
+        try {
+            let resp;
+            if (tab === 'json') {
+                resp = await fetch(`${API}/api/v1/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonInput });
+            } else if (tab === 'text') {
+                resp = await fetch(`${API}/api/v1/analyze/text`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: textInput }) });
+            } else {
+                if (!fileRef.current?.files.length) { setError('No file selected.'); setLoading(false); clearInterval(stepTimer); return; }
+                const fd = new FormData(); fd.append('file', fileRef.current.files[0]);
+                resp = await fetch(`${API}/api/v1/analyze/upload`, { method: 'POST', body: fd });
+            }
+            clearInterval(stepTimer); setLoadStep(4);
+            if (!resp.ok) {
+                let msg = `Error ${resp.status}`;
+                try {
+                    const e = await resp.json();
+                    msg = typeof e.detail === 'string' ? e.detail : Array.isArray(e.detail) ? e.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : JSON.stringify(e.detail || e);
+                } catch {}
+                throw new Error(msg);
+            }
+            const data = await resp.json();
+            setResult(data);
+            toast(`Analysis complete \u2014 ${data.campaigns.length} campaigns detected`, 'success');
+        } catch (e) { const msg = typeof e.message === 'string' ? e.message : String(e); setError(msg); toast(msg, 'error'); clearInterval(stepTimer); }
+        finally { setLoading(false); }
+    };
+
+    /* Drag and drop */
+    const handleDrop = (e) => {
+        e.preventDefault(); setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file && file.name.endsWith('.json')) {
+            const dt = new DataTransfer(); dt.items.add(file);
+            if (fileRef.current) { fileRef.current.files = dt.files; }
+            toast(`File loaded: ${file.name}`, 'info');
+        } else { toast('Please drop a .json file', 'error'); }
+    };
+
+    const confColor = s => s >= 85 ? 'var(--red)' : s >= 65 ? 'var(--amber)' : s >= 40 ? 'var(--blue)' : 'var(--green)';
+
+    /* Visual data derivation */
+    let iocBreakdown = [], relBreakdown = [], riskBreakdown = [];
+    if (result) {
+        const viz = result.graph_visualization;
+        const ips = viz.nodes.filter(n => n.type === 'ip').length;
+        const doms = viz.nodes.filter(n => n.type === 'domain').length;
+        const hashes = viz.nodes.filter(n => n.type === 'hash').length;
+        iocBreakdown = [
+            { label: 'IPs', value: ips, color: '#bfdbfe' },
+            { label: 'Domains', value: doms, color: '#e0f2fe' },
+            { label: 'Hashes', value: hashes, color: '#60a5fa' },
+        ];
+
+        const relTypes = {};
+        result.ioc_relationships.forEach(r => { relTypes[r.relationship_type] = (relTypes[r.relationship_type] || 0) + 1; });
+        const relColors = { time_proximity: 'var(--blue)', shared_asn: 'var(--cyan)', shared_hosting: 'var(--teal)', shared_ssl_issuer: 'var(--purple)', shared_malware_family: 'var(--rose)', shared_c2_domain: 'var(--amber)', shared_ip: 'var(--blue)' };
+        const totalRels = result.ioc_relationships.length || 1;
+        relBreakdown = Object.entries(relTypes).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
+            label: k.replace('shared_', '').replace('_', ' '),
+            value: v, pct: Math.round(v / totalRels * 100),
+            color: relColors[k] || 'var(--accent)',
+        }));
+
+        const rc = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+        result.campaigns.forEach(c => { rc[c.risk_level]++; });
+        riskBreakdown = [
+            { label: 'Critical', value: rc.CRITICAL, color: 'var(--red)' },
+            { label: 'High', value: rc.HIGH, color: 'var(--amber)' },
+            { label: 'Medium', value: rc.MEDIUM, color: 'var(--blue)' },
+            { label: 'Low', value: rc.LOW, color: 'var(--green)' },
+        ].filter(r => r.value > 0);
+    }
+
+    const now = new Date().toLocaleString('en-US', { hour12: false, month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    return (
+    <div>
+        <nav className="topnav">
+            <div className="brand">
+                <div>
+                    <div className="brand-name">SYNAPSE</div>
+                    <div className="brand-sub">Threat Correlation</div>
+                </div>
+            </div>
+            <div className="nav-right">
+                {result && (
+                    <div className="export-btns">
+                        <a className="btn-exp" href={`${API}/api/v1/export/json`} target="_blank">JSON</a>
+                        <a className="btn-exp" href={`${API}/api/v1/export/csv/campaigns`} target="_blank">Campaigns</a>
+                        <a className="btn-exp" href={`${API}/api/v1/export/csv/relationships`} target="_blank">Relations</a>
+                        <a className="btn-exp" href={`${API}/api/v1/export/csv/iocs`} target="_blank">IOCs</a>
+                    </div>
+                )}
+                <div className="status-pill" style={{fontFamily:"'JetBrains Mono', monospace", letterSpacing:'0.5px', color:'#ffffff'}}>{clock}</div>
+                <div className="status-pill"><div className="status-dot" /> Online</div>
+            </div>
+        </nav>
+
+        <div className="content">
+            {/* Hero with Logo */}
+            <div className="hero anim">
+                <div style={{marginBottom: '16px'}}>
+                    <img src="/static/logo.png" alt="SYNAPSE" className="hero-logo"
+                         onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }}
+                    />
+                    <div style={{display:'none'}}><BrainLogo size={180} /></div>
+                </div>
+                <div className="hero-title">SYNAPSE</div>
+                <div className="hero-sub">AI-Powered Threat Intelligence Correlation Engine</div>
+                <div className="hero-line" />
+            </div>
+
+            {/* Input */}
+            <div className="card input-card anim d1">
+                <div className="card-head">
+                    <div className="card-title"><div className="dot" /> IOC Ingestion</div>
+                    <div className="card-meta">{now}</div>
+                </div>
+                <div className="card-body" style={{padding:'16px 20px'}}>
+                    <div className="input-header">
+                        <h2>Submit Indicators</h2>
+                        <p>Paste IOCs, upload a JSON file, or enter indicators line-by-line.</p>
+                    </div>
+                    <div className="tabs">
+                        <button className={tab === 'json' ? 'on' : ''} onClick={() => setTab('json')}>JSON</button>
+                        <button className={tab === 'text' ? 'on' : ''} onClick={() => setTab('text')}>Text</button>
+                        <button className={tab === 'file' ? 'on' : ''} onClick={() => setTab('file')}>Upload</button>
+                    </div>
+                    {tab === 'json' && <textarea className="inp" value={jsonInput} onChange={e => setJsonInput(e.target.value)} placeholder="Paste IOC JSON..." spellCheck="false" />}
+                    {tab === 'text' && <textarea className="inp" value={textInput} onChange={e => setTextInput(e.target.value)} placeholder="One IOC per line..." spellCheck="false" />}
+                    {tab === 'file' && (
+                        <div className={`file-zone${dragOver ? ' drag-over' : ''}`}
+                             onClick={() => fileRef.current?.click()}
+                             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                             onDragLeave={() => setDragOver(false)}
+                             onDrop={handleDrop}>
+                            <input type="file" ref={fileRef} accept=".json" />
+                            <div className="drop-icon" style={{marginBottom:8, fontSize:'1.6rem', opacity: dragOver ? 0.8 : 0.25, transition:'all 0.3s'}}>
+                                {dragOver ? '\u21E9' : '+'}
+                            </div>
+                            {dragOver ? 'Release to upload' : 'Drop JSON file or click to browse'}
+                        </div>
+                    )}
+                    <button className="btn-run" onClick={analyze} disabled={loading}>
+                        {loading ? 'Processing...' : 'Analyze Indicators'}
+                    </button>
+                    {error && <div className="err-box">{error}</div>}
+                </div>
+            </div>
+
+            {loading && (
+                <div className="loading anim">
+                    <div className="ld-orb">
+                        <div className="r1" /><div className="r2" /><div className="r3" />
+                        <div className="ld-core" />
+                    </div>
+                    <div className="ld-text">Running Correlation Pipeline</div>
+                    <div className="ld-sub">Stage {loadStep + 1} of 5</div>
+                    <div className="ld-steps">
+                        {['ENRICH','GRAPH','CLUSTER','SCORE','REPORT'].map((s, i) => (
+                            <span key={s} className="ld-step" style={loadStep >= i ? {color:'#bfdbfe', borderColor:'rgba(191,219,254,0.35)', background:'rgba(191,219,254,0.06)'} : {}}>
+                                {loadStep > i ? '\u2713 ' : ''}{s}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {result && !loading && (<>
+                {/* Section Nav */}
+                <SectionNav sections={[
+                    {id:'sec-overview', label:'Overview'},
+                    {id:'sec-breakdown', label:'Breakdown'},
+                    {id:'sec-intel', label:'Intelligence'},
+                    {id:'sec-campaigns', label:'Campaigns'},
+                    {id:'sec-hubs', label:'Hubs'},
+                ]} />
+
+                {/* Stats */}
+                <div id="sec-overview" />
+                <Reveal><div className="sec-label">Analysis Overview</div></Reveal>
+                <Reveal delay={1}><div className="stats">
+                    <StatCard icon="&#9678;" value={result.graph_metrics.total_nodes} label="IOCs Analyzed" color="var(--cyan)" cssClass="c-cyan" />
+                    <StatCard icon="&#9670;" value={result.campaigns.length} label="Campaigns" color="var(--purple)" cssClass="c-purple" />
+                    <StatCard icon="&#8644;" value={result.graph_metrics.total_edges} label="Relations" color="var(--amber)" cssClass="c-amber" />
+                    <StatCard icon="&#9673;" value={result.graph_metrics.connected_components} label="Components" color="var(--green)" cssClass="c-green" />
+                    <StatCard icon="&#9888;" value={result.campaigns.filter(c => c.risk_level==='CRITICAL'||c.risk_level==='HIGH').length} label="High / Crit" color="var(--rose)" cssClass="c-rose" />
+                    <StatCard icon="&#9632;" value={result.graph_metrics.density} label="Density" color="var(--blue)" cssClass="c-blue" />
+                </div></Reveal>
+
+
+
+                {/* Visual breakdown */}
+                <div id="sec-breakdown" />
+                <Reveal><div className="sec-label">Visual Breakdown</div></Reveal>
+                <Reveal delay={1}><div className="viz-row">
+                    <div className="card">
+                        <div className="card-body mini-chart">
+                            <div className="mini-chart-title">IOC Type Distribution</div>
+                            <div className="donut-wrap">
+                                <Donut data={iocBreakdown} />
+                                <div className="donut-center">
+                                    <div className="donut-big">{result.graph_metrics.total_nodes}</div>
+                                    <div className="donut-sub">Total</div>
+                                </div>
+                            </div>
+                            <div className="donut-legend">
+                                {iocBreakdown.map(d => (
+                                    <div key={d.label} className="donut-leg-item">
+                                        <div className="donut-leg-dot" style={{background:d.color, boxShadow:`0 0 6px ${d.color}`}} />
+                                        {d.label}: <strong>{d.value}</strong>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card">
+                        <div className="card-body mini-chart">
+                            <div className="mini-chart-title">Relationship Distribution</div>
+                            <div className="bar-list" style={{width:'100%', marginTop:8}}>
+                                {relBreakdown.slice(0, 5).map(r => (
+                                    <div className="bar-item" key={r.label}>
+                                        <div className="bar-label"><span>{r.label}</span><span>{r.value} ({r.pct}%)</span></div>
+                                        <div className="bar-track"><div className="bar-fill" style={{width: `${r.pct}%`, background: r.color}} /></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card">
+                        <div className="card-body mini-chart">
+                            <div className="mini-chart-title">Risk Distribution</div>
+                            {riskBreakdown.length > 1 ? (
+                                <>
+                                    <div className="donut-wrap">
+                                        <Donut data={riskBreakdown} />
+                                        <div className="donut-center">
+                                            <div className="donut-big">{result.campaigns.length}</div>
+                                            <div className="donut-sub">Campaigns</div>
+                                        </div>
+                                    </div>
+                                    <div className="donut-legend">
+                                        {riskBreakdown.map(d => (
+                                            <div key={d.label} className="donut-leg-item">
+                                                <div className="donut-leg-dot" style={{background:d.color, boxShadow:`0 0 6px ${d.color}`}} />
+                                                {d.label}: <strong>{d.value}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : riskBreakdown.length === 1 ? (
+                                <div className="risk-single">
+                                    <div className="donut-wrap">
+                                        <svg width={130} height={130}>
+                                            <circle cx={65} cy={65} r={52} fill="none" stroke="rgba(191,219,254,0.06)" strokeWidth={14} />
+                                            <circle cx={65} cy={65} r={52} fill="none" stroke={riskBreakdown[0].color} strokeWidth={14}
+                                                style={{filter:`drop-shadow(0 0 8px ${riskBreakdown[0].color}55)`, transition:'all 0.5s ease'}} />
+                                        </svg>
+                                        <div className="donut-center">
+                                            <div className="donut-big">{result.campaigns.length}</div>
+                                            <div className="donut-sub">{result.campaigns.length === 1 ? 'Campaign' : 'Campaigns'}</div>
+                                        </div>
+                                    </div>
+                                    <div className="risk-badge" style={{background:`${riskBreakdown[0].color}18`, color:riskBreakdown[0].color, border:`1px solid ${riskBreakdown[0].color}33`}}>
+                                        <div className="donut-leg-dot" style={{background:riskBreakdown[0].color, boxShadow:`0 0 6px ${riskBreakdown[0].color}`}} />
+                                        All {riskBreakdown[0].label} Risk
+                                    </div>
+                                </div>
+                            ) : <div style={{color:'var(--text-muted)', fontSize:'0.87rem', marginTop:20}}>No campaigns detected</div>}
+                        </div>
+                    </div>
+                </div></Reveal>
+
+                {/* Threat Intel Panel */}
+                <div id="sec-intel" />
+                <Reveal><div className="sec-label">Correlation Intelligence</div></Reveal>
+                <Reveal delay={1}>
+                    <ThreatIntelPanel data={result.graph_visualization} metrics={result.graph_metrics} relationships={result.ioc_relationships} />
+                </Reveal>
+
+                {/* Campaigns + Summary */}
+                <div id="sec-campaigns" />
+                <Reveal><div className="sec-label">Intelligence</div></Reveal>
+                <Reveal delay={1}><div className="g2">
+                    <div className="card">
+                        <div className="card-head">
+                            <div className="card-title"><div className="dot" style={{background:'var(--amber)', boxShadow:'0 0 8px rgba(245,158,11,0.3)'}} /> Threat Campaigns</div>
+                            <div className="card-meta">{result.campaigns.length} detected</div>
+                        </div>
+                        <div className="card-body">
+                            {result.campaigns.map(c => {
+                                const isOpen = expandedCamps[c.campaign_id];
+                                return (
+                                <div key={c.campaign_id} className={`camp ${c.risk_level}`}>
+                                    <div className="camp-top camp-toggle" onClick={() => toggleCamp(c.campaign_id)}>
+                                        <div style={{display:'flex', alignItems:'center', gap:10}}>
+                                            <span className={`camp-chevron${isOpen ? ' open' : ''}`}>{'\u25B6'}</span>
+                                            <div>
+                                                <div className="camp-id">{c.campaign_id}</div>
+                                                <div className="camp-name">{c.name}</div>
+                                            </div>
+                                        </div>
+                                        <span className={`risk-pill ${c.risk_level}`}>{c.risk_level}</span>
+                                    </div>
+                                    <div className="camp-row">
+                                        <span>Indicators: <strong>{c.ioc_count}</strong></span>
+                                        <span>Confidence: <strong>{c.confidence_score}%</strong></span>
+                                    </div>
+                                    <div className="conf-track">
+                                        <div className="conf-bar" style={{width:`${c.confidence_score}%`, background:confColor(c.confidence_score)}} />
+                                    </div>
+                                    <div className={`camp-details${isOpen ? ' open' : ''}`}>
+                                        <div className="camp-infra" style={{marginTop:10}}>
+                                            {c.core_infrastructure.slice(0, 4).join(' / ')}
+                                            {c.core_infrastructure.length > 4 && ` +${c.core_infrastructure.length - 4}`}
+                                        </div>
+                                        {c.mitre_mappings?.length > 0 && (
+                                            <div className="mitre-tags">
+                                                {c.mitre_mappings.map((m, i) => <span key={i} className="mt">{m.technique_id}</span>)}
+                                            </div>
+                                        )}
+                                        {c.confidence_breakdown && (
+                                            <div className="gauge-row">
+                                                <div className="gauge-mini"><MiniGauge value={c.confidence_score} /></div>
+                                                <div className="gauge-details">
+                                                    <div className="gauge-det-row"><span>Attributes</span><span>{c.confidence_breakdown.shared_attributes_score}</span></div>
+                                                    <div className="gauge-det-row"><span>Density</span><span>{c.confidence_breakdown.graph_density_score}</span></div>
+                                                    <div className="gauge-det-row"><span>Centrality</span><span>{c.confidence_breakdown.central_node_score}</span></div>
+                                                    <div className="gauge-det-row"><span>Reputation</span><span>{c.confidence_breakdown.reputation_score}</span></div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-head">
+                            <div className="card-title"><div className="dot" style={{background:'var(--green)', boxShadow:'0 0 8px rgba(34,197,94,0.3)'}} /> Intelligence Report</div>
+                            <div className="card-meta">TLP:AMBER</div>
+                        </div>
+                        <div className="card-body" style={{padding: 0}}>
+                            <div className="term">
+                                <div className="term-bar">
+                                    <div className="term-dot" style={{background:'var(--rose)'}} />
+                                    <div className="term-dot" style={{background:'var(--amber)'}} />
+                                    <div className="term-dot" style={{background:'var(--green)'}} />
+                                    <span className="term-path">~/reports/synapse_correlation.txt</span>
+                                </div>
+                                <div className="term-body">{result.analyst_summary}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div></Reveal>
+
+                {/* Hub table */}
+                <div id="sec-hubs" />
+                <Reveal><div className="sec-label">Infrastructure Hubs</div></Reveal>
+                <Reveal delay={1}><div className="card">
+                    <div className="card-head">
+                        <div className="card-title"><div className="dot" style={{background:'var(--purple)', boxShadow:'0 0 8px rgba(186,230,253,0.3)'}} /> Infrastructure Hub Analysis</div>
+                        <div className="card-meta">{result.graph_metrics.top_central_nodes.length} nodes &middot; degree centrality</div>
+                    </div>
+                    <div className="card-body" style={{padding:'12px 20px'}}>
+                        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:10}}>
+                            {result.graph_metrics.top_central_nodes.map((n, i) => {
+                                const pct = (n.centrality * 100);
+                                const nodeData = result.graph_visualization?.nodes?.find(nd => nd.id === n.node);
+                                const nType = nodeData?.type || 'ip';
+                                const barColor = pct >= 80 ? 'linear-gradient(90deg, #3b82f6, #60a5fa)' : pct >= 50 ? 'linear-gradient(90deg, #22c55e, #4ade80)' : 'linear-gradient(90deg, #a78bfa, #c4b5fd)';
+                                return (
+                                    <div key={i} style={{
+                                        background:'linear-gradient(145deg, rgba(10,15,28,0.7), rgba(7,10,20,0.5))',
+                                        border:'1px solid var(--border)', borderRadius:12,
+                                        padding:'14px 16px', transition:'all 0.3s',
+                                        cursor:'default', position:'relative', overflow:'hidden'
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.borderColor='var(--border-hover)'; e.currentTarget.style.transform='translateY(-2px)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.transform='translateY(0)'; }}>
+                                        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10}}>
+                                            <div style={{display:'flex', alignItems:'center', gap:10}}>
+                                                <span style={{
+                                                    display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                                    width:28, height:28, borderRadius:8,
+                                                    background: i < 3 ? 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(96,165,250,0.08))' : 'rgba(255,255,255,0.03)',
+                                                    border: i < 3 ? '1px solid rgba(59,130,246,0.25)' : '1px solid var(--border)',
+                                                    fontFamily:"'JetBrains Mono',monospace", fontSize:'0.73rem', fontWeight:700,
+                                                    color: i < 3 ? '#60a5fa' : 'var(--text-muted)'
+                                                }}>
+                                                    {i + 1}
+                                                </span>
+                                                <span className={`ioc-type-badge ${nType}`} style={{fontSize:'0.6rem', padding:'2px 7px'}}>
+                                                    {nType}
+                                                </span>
+                                            </div>
+                                            <span style={{fontFamily:"'JetBrains Mono',monospace", fontSize:'1.1rem', fontWeight:800, color: pct >= 80 ? '#60a5fa' : pct >= 50 ? '#4ade80' : '#c4b5fd'}}>
+                                                {pct.toFixed(1)}%
+                                            </span>
+                                        </div>
+                                        <div style={{fontFamily:"'JetBrains Mono',monospace", fontSize:'0.77rem', color:'var(--text-primary)', marginBottom:10, wordBreak:'break-all', lineHeight:1.4}}>
+                                            {nType === 'hash' ? n.node.substring(0, 32) + '...' : n.node}
+                                        </div>
+                                        <div style={{height:5, background:'var(--bg-base)', borderRadius:3, overflow:'hidden'}}>
+                                            <div style={{width:`${pct}%`, height:'100%', borderRadius:3, background:barColor, transition:'width 0.8s cubic-bezier(0.16,1,0.3,1)', position:'relative'}}>
+                                                <div style={{position:'absolute', inset:0, background:'linear-gradient(90deg, transparent, rgba(255,255,255,0.15))', borderRadius:3}} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div></Reveal>
+
+                <Reveal><div className="footer">
+                    <div className="footer-line" />
+                    <span className="footer-brand">SYNAPSE</span> v1.0 &middot; Threat Intelligence Correlation Engine
+                </div></Reveal>
+            </>)}
+        </div>
+    </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<ToastProvider><App /></ToastProvider>);
+</script>
+</body>
+</html>
