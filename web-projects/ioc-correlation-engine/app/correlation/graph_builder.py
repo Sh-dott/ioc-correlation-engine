@@ -177,6 +177,10 @@ def _add_temporal_edges(G: nx.Graph, enriched_iocs: list[EnrichedIOC]) -> None:
     """Connect IOCs whose timestamps are within the configured proximity window.
 
     Weight decays linearly with time distance: closer in time → stronger signal.
+    To avoid creating a complete graph from batch-submitted IOCs (all same
+    timestamp), temporal edges are only added between pairs that already
+    share at least one attribute-based edge.  This makes time proximity a
+    *reinforcing* signal rather than a standalone connector.
     """
     threshold_hours = settings.correlation.time_proximity_hours
     base_weight = _ATTR_WEIGHTS["time_proximity"]
@@ -184,10 +188,14 @@ def _add_temporal_edges(G: nx.Graph, enriched_iocs: list[EnrichedIOC]) -> None:
 
     for i in range(len(items)):
         for j in range(i + 1, len(items)):
+            # Only reinforce existing attribute edges with temporal weight
+            if not G.has_edge(items[i][0], items[j][0]):
+                continue
+
             delta = abs((items[i][1] - items[j][1]).total_seconds()) / 3600
             if delta <= threshold_hours:
                 # Decay: full weight at delta=0, zero at delta=threshold
-                decay = 1.0 - (delta / threshold_hours)
+                decay = 1.0 - (delta / threshold_hours) if threshold_hours > 0 else 1.0
                 w = round(base_weight * decay, 4)
                 if w < 0.02:
                     continue  # skip negligible correlations

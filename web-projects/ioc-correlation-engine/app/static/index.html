@@ -224,9 +224,9 @@
         .nav-right { display: flex; align-items: center; gap: 10px; }
         .status-pill {
             display: flex; align-items: center; gap: 7px;
-            font-size: 0.71rem; color: var(--text-muted);
+            font-size: 0.71rem; color: var(--text-secondary);
             padding: 5px 12px; border-radius: 100px;
-            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
         }
         .status-dot {
             width: 6px; height: 6px; border-radius: 50%; background: #22c55e;
@@ -237,9 +237,9 @@
 
         .export-btns { display: flex; gap: 5px; }
         .btn-exp {
-            padding: 6px 13px; border-radius: 7px; font-size: 0.71rem; font-weight: 500;
-            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-            color: var(--text-muted); text-decoration: none; font-family: 'Inter', sans-serif;
+            padding: 6px 13px; border-radius: 7px; font-size: 0.71rem; font-weight: 700;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: #ffffff; text-decoration: none; font-family: 'Inter', sans-serif;
             transition: all 0.2s; letter-spacing: 0.3px;
         }
         .btn-exp:hover { border-color: rgba(59,130,246,0.3); color: var(--text-secondary); background: rgba(59,130,246,0.06); }
@@ -274,7 +274,7 @@
             pointer-events: none;
         }
         .hero-title {
-            font-size: 3.2rem; font-weight: 900; letter-spacing: 10px; line-height: 1;
+            font-size: 2.8rem; font-weight: 900; letter-spacing: 10px; line-height: 1;
             background: linear-gradient(135deg, #f0f9ff 0%, #dbeafe 25%, #93c5fd 50%, #60a5fa 75%, #dbeafe 100%);
             background-size: 300% 300%;
             animation: gradient-shift 8s ease infinite;
@@ -296,7 +296,7 @@
             50% { background-position: 100% 50%; }
         }
         .hero-sub {
-            font-size: 0.82rem; color: var(--text-muted); letter-spacing: 5px;
+            font-size: 0.72rem; color: var(--text-muted); letter-spacing: 5px;
             text-transform: uppercase; font-weight: 500; opacity: 0.7;
         }
         .hero-line {
@@ -500,6 +500,8 @@
         .donut-legend { display: flex; gap: 16px; margin-top: 16px; }
         .donut-leg-item { display: flex; align-items: center; gap: 6px; font-size: 0.79rem; color: var(--text-secondary); }
         .donut-leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .risk-single { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 8px; }
+        .risk-badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 16px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; }
         .bar-list { width: 100%; }
         .bar-item { margin-bottom: 12px; }
         .bar-label { display: flex; justify-content: space-between; font-size: 0.79rem; margin-bottom: 5px; }
@@ -515,7 +517,7 @@
 
         /* ── Threat Intel Panel ── */
         .intel-wrap { margin-bottom: 1.5rem; }
-        .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
         @media (max-width: 1000px) { .intel-grid { grid-template-columns: 1fr; } }
 
         /* IOC cards grid */
@@ -1281,6 +1283,24 @@ function Donut({ data, size = 130 }) {
         return m[c] || '#ffffff';
     };
 
+    /* Single segment → full circle, no arc gap */
+    if (data.length === 1) {
+        const d = data[0];
+        return (
+            <svg width={size} height={size}>
+                <defs>
+                    <linearGradient id={`dg-${uid}-0`} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={lighten(d.color)} />
+                        <stop offset="100%" stopColor={d.color} />
+                    </linearGradient>
+                </defs>
+                <circle cx={mid} cy={mid} r={cr} fill="none" stroke="rgba(191,219,254,0.06)" strokeWidth={stroke} />
+                <circle cx={mid} cy={mid} r={cr} fill="none" stroke={`url(#dg-${uid}-0)`} strokeWidth={stroke}
+                    style={{ transition: 'all 0.5s ease' }} />
+            </svg>
+        );
+    }
+
     const arcs = data.map((d, i) => {
         const angle = Math.max(0, (d.value / total) * Math.PI * 2 - gap);
         const start = cumAngle + gap / 2;
@@ -1719,6 +1739,11 @@ function ThreatIntelPanel({ data, metrics, relationships }) {
     /* Sort nodes: high-reputation first */
     const sortedNodes = [...data.nodes].sort((a, b) => b.reputation - a.reputation);
 
+    /* IOC type filter */
+    const [iocFilter, setIocFilter] = React.useState('all');
+    const filteredNodes = iocFilter === 'all' ? sortedNodes : sortedNodes.filter(n => n.type === iocFilter);
+    const typeCounts = { all: data.nodes.length, ip: data.nodes.filter(n => n.type === 'ip').length, domain: data.nodes.filter(n => n.type === 'domain').length, hash: data.nodes.filter(n => n.type === 'hash').length };
+
     /* Timeline data */
     const nodesWithTime = data.nodes.filter(n => n.timestamp).map(n => ({
         ...n, ts: new Date(n.timestamp).getTime()
@@ -1737,8 +1762,19 @@ function ThreatIntelPanel({ data, metrics, relationships }) {
                 <div className="card-title"><div className="dot" /> IOC Intelligence</div>
                 <div className="card-meta">{data.nodes.length} indicators analyzed</div>
             </div>
+            <div style={{display:'flex', gap:6, padding:'0 20px 12px', flexWrap:'wrap'}}>
+                {[{key:'all', label:'All', icon:null}, {key:'ip', label:'IP', icon:typeIcon.ip}, {key:'domain', label:'Domain', icon:typeIcon.domain}, {key:'hash', label:'Hash', icon:typeIcon.hash}].map(f => (
+                    <button key={f.key} onClick={() => setIocFilter(f.key)}
+                        style={{padding:'5px 14px', borderRadius:20, border: iocFilter === f.key ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.08)',
+                            background: iocFilter === f.key ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.03)',
+                            color: iocFilter === f.key ? 'var(--accent)' : 'var(--text-muted)',
+                            cursor:'pointer', fontSize:'0.78rem', fontWeight:600, transition:'all 0.2s', display:'flex', alignItems:'center', gap:5}}>
+                        {f.icon && <span style={{fontSize:'0.72rem'}}>{f.icon}</span>}{f.label} <span style={{opacity:0.6, fontWeight:400, marginLeft:2}}>({typeCounts[f.key]})</span>
+                    </button>
+                ))}
+            </div>
             <div className="ioc-cards">
-                {sortedNodes.map(n => {
+                {filteredNodes.map(n => {
                     const conns = connMap[n.id] || 0;
                     const cent = centralMap[n.id];
                     return (
@@ -1922,6 +1958,14 @@ function App() {
 
     const toggleCamp = (id) => setExpandedCamps(prev => ({ ...prev, [id]: !prev[id] }));
 
+    useEffect(() => {
+        if (result && result.campaigns) {
+            const all = {};
+            result.campaigns.forEach(c => { all[c.campaign_id] = true; });
+            setExpandedCamps(all);
+        }
+    }, [result]);
+
     const analyze = async () => {
         setLoading(true); setError(null); setLoadStep(0);
         const steps = [0, 1, 2, 3, 4];
@@ -2019,7 +2063,7 @@ function App() {
                         <a className="btn-exp" href={`${API}/api/v1/export/csv/iocs`} target="_blank">IOCs</a>
                     </div>
                 )}
-                <div className="status-pill" style={{fontFamily:"'JetBrains Mono', monospace", letterSpacing:'0.5px'}}>{clock}</div>
+                <div className="status-pill" style={{fontFamily:"'JetBrains Mono', monospace", letterSpacing:'0.5px', color:'#ffffff'}}>{clock}</div>
                 <div className="status-pill"><div className="status-dot" /> Online</div>
             </div>
         </nav>
@@ -2158,7 +2202,7 @@ function App() {
                     <div className="card">
                         <div className="card-body mini-chart">
                             <div className="mini-chart-title">Risk Distribution</div>
-                            {riskBreakdown.length > 0 ? (
+                            {riskBreakdown.length > 1 ? (
                                 <>
                                     <div className="donut-wrap">
                                         <Donut data={riskBreakdown} />
@@ -2176,6 +2220,24 @@ function App() {
                                         ))}
                                     </div>
                                 </>
+                            ) : riskBreakdown.length === 1 ? (
+                                <div className="risk-single">
+                                    <div className="donut-wrap">
+                                        <svg width={130} height={130}>
+                                            <circle cx={65} cy={65} r={52} fill="none" stroke="rgba(191,219,254,0.06)" strokeWidth={14} />
+                                            <circle cx={65} cy={65} r={52} fill="none" stroke={riskBreakdown[0].color} strokeWidth={14}
+                                                style={{filter:`drop-shadow(0 0 8px ${riskBreakdown[0].color}55)`, transition:'all 0.5s ease'}} />
+                                        </svg>
+                                        <div className="donut-center">
+                                            <div className="donut-big">{result.campaigns.length}</div>
+                                            <div className="donut-sub">{result.campaigns.length === 1 ? 'Campaign' : 'Campaigns'}</div>
+                                        </div>
+                                    </div>
+                                    <div className="risk-badge" style={{background:`${riskBreakdown[0].color}18`, color:riskBreakdown[0].color, border:`1px solid ${riskBreakdown[0].color}33`}}>
+                                        <div className="donut-leg-dot" style={{background:riskBreakdown[0].color, boxShadow:`0 0 6px ${riskBreakdown[0].color}`}} />
+                                        All {riskBreakdown[0].label} Risk
+                                    </div>
+                                </div>
                             ) : <div style={{color:'var(--text-muted)', fontSize:'0.87rem', marginTop:20}}>No campaigns detected</div>}
                         </div>
                     </div>

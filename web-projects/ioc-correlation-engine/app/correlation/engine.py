@@ -43,10 +43,38 @@ def detect_communities(G: nx.Graph) -> dict[str, int]:
 
 
 def compute_centrality(G: nx.Graph) -> dict[str, float]:
-    """Degree centrality — identifies infrastructure hubs."""
+    """Weighted hub score — combines betweenness centrality with weighted
+    degree to differentiate nodes even in dense graphs.
+
+    Betweenness measures how often a node bridges shortest paths (structural
+    importance).  Weighted degree sums edge weights (strength of connections).
+    The two are normalised 0-1 and blended 50/50.
+    """
     if G.number_of_nodes() == 0:
         return {}
-    return nx.degree_centrality(G)
+
+    n = G.number_of_nodes()
+    if n <= 2:
+        return nx.degree_centrality(G)
+
+    # Betweenness centrality (already 0-1 normalised by NetworkX)
+    bc = nx.betweenness_centrality(G, weight="weight")
+
+    # Weighted degree: sum of edge weights per node, normalised to 0-1
+    wd = {}
+    for node in G.nodes():
+        wd[node] = sum(d.get("weight", 0) for _, _, d in G.edges(node, data=True))
+    max_wd = max(wd.values()) if wd else 1
+    if max_wd == 0:
+        max_wd = 1
+    wd = {k: v / max_wd for k, v in wd.items()}
+
+    # Blend: 50% betweenness + 50% weighted degree
+    result = {}
+    for node in G.nodes():
+        result[node] = round(0.5 * bc.get(node, 0) + 0.5 * wd.get(node, 0), 4)
+
+    return result
 
 
 def compute_graph_metrics(

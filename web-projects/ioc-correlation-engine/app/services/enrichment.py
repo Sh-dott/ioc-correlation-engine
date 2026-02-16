@@ -30,8 +30,7 @@ _COUNTRIES = [
 
 _HOSTING_PROVIDERS = [
     "DigitalOcean", "OVH", "Hetzner", "Bulletproof-Host-X",
-    "CloudFlare", "Alibaba Cloud", "AWS", "Leaseweb",
-    "Choopa/Vultr", "M247",
+    "CloudFlare", "Leaseweb",
 ]
 
 _REGISTRARS = [
@@ -40,8 +39,8 @@ _REGISTRARS = [
 ]
 
 _SSL_ISSUERS = [
-    "Let's Encrypt", "Comodo", "DigiCert", "GlobalSign",
-    "Sectigo", "Self-Signed", None,
+    "Let's Encrypt", "Comodo", "DigiCert",
+    "Self-Signed", None,
 ]
 
 _MALWARE_FAMILIES = [
@@ -118,7 +117,9 @@ def enrich_batch(iocs: list[IOC]) -> list[EnrichedIOC]:
 
 def _enrich_ip(value: str) -> IPEnrichment:
     n = _stable_int(value)
-    asn_number = 10000 + (n % 55000)
+    # Small ASN pool (8 values) so IPs realistically share ASNs
+    _ASN_POOL = [13335, 16276, 24940, 14061, 20473, 63949, 18245, 9009]
+    asn_number = _ASN_POOL[n % len(_ASN_POOL)]
 
     common_ports = [22, 80, 443, 8080, 8443, 3389, 445, 53, 25, 4444, 9090]
     port_count = (n % 4) + 1
