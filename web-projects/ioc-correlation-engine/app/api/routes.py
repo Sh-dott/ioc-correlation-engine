@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 
 from app.api.pipeline import run_analysis
@@ -17,7 +17,7 @@ from app.reporting.export import (
     relationships_to_csv,
     to_json,
 )
-from app.services.ingestion import ingest_batch, ingest_text
+from app.services.ingestion import ingest_batch, ingest_flexible, ingest_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,11 +38,39 @@ def _store(result: AnalysisResult) -> AnalysisResult:
 
 
 @router.post("/api/v1/analyze", response_model=AnalysisResult, tags=["Analysis"])
-async def analyze_iocs(batch: IOCBatchInput):
-    """Submit a JSON array of IOCs and receive the full correlation analysis."""
-    iocs = ingest_batch(batch)
+async def analyze_iocs(request: Request):
+    """Submit IOCs in any common format and receive the full correlation analysis.
+
+    Accepts: ``{"iocs": [...]}``, ``{"indicators": [...]}``, ``[...]`` (bare array),
+    STIX bundles, or any JSON with common IOC fields (value/indicator/ioc, type, etc.).
+    Type aliases like ipv4, sha256, domain-name, fqdn, etc. are auto-mapped.
+    If type is missing, it is auto-detected from the value.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+
+    # Try flexible ingestion first (handles any format)
+    iocs = ingest_flexible(body)
+
+    # Fallback: try strict batch format
     if not iocs:
-        raise HTTPException(status_code=400, detail="No valid IOCs provided.")
+        try:
+            batch = IOCBatchInput(**body)
+            iocs = ingest_batch(batch)
+        except Exception:
+            pass
+
+    if not iocs:
+        raise HTTPException(
+            status_code=400,
+            detail="No valid IOCs found. Accepted formats: "
+                   '{"iocs": [{"value": "...", "type": "ip|domain|hash"}]}, '
+                   '[{"value": "...", "type": "ipv4|sha256|domain-name|..."}], '
+                   "or any JSON with value/indicator fields. "
+                   "Types are auto-detected if omitted."
+        )
     result = run_analysis(iocs)
     return _store(result)
 
@@ -65,7 +93,7 @@ async def analyze_text(body: dict):
 
 @router.post("/api/v1/analyze/upload", response_model=AnalysisResult, tags=["Analysis"])
 async def analyze_upload(file: UploadFile = File(...)):
-    """Upload a JSON file containing an IOC batch."""
+    """Upload a JSON file containing IOCs in any common format."""
     import json
 
     content = await file.read()
@@ -74,8 +102,15 @@ async def analyze_upload(file: UploadFile = File(...)):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON file.")
 
-    batch = IOCBatchInput(**data)
-    iocs = ingest_batch(batch)
+    iocs = ingest_flexible(data)
+    if not iocs:
+        # Fallback to strict format
+        try:
+            batch = IOCBatchInput(**data)
+            iocs = ingest_batch(batch)
+        except Exception:
+            pass
+
     if not iocs:
         raise HTTPException(status_code=400, detail="No valid IOCs in uploaded file.")
     result = run_analysis(iocs)

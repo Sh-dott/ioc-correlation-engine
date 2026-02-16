@@ -26,6 +26,7 @@ _DOMAIN_RE = re.compile(
     r"[a-zA-Z]{2,}$"
 )
 _SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
+_HASH_RE = re.compile(r"^[a-fA-F0-9]{32,64}$")  # MD5(32), SHA1(40), SHA256(64)
 
 
 class IOC(BaseModel):
@@ -45,8 +46,8 @@ class IOC(BaseModel):
             raise ValueError(f"Invalid IPv4 address: {v}")
         if ioc_type == IOCType.DOMAIN and not _DOMAIN_RE.match(v):
             raise ValueError(f"Invalid domain: {v}")
-        if ioc_type == IOCType.HASH and not _SHA256_RE.match(v):
-            raise ValueError(f"Invalid SHA-256 hash: {v}")
+        if ioc_type == IOCType.HASH and not _HASH_RE.match(v):
+            raise ValueError(f"Invalid hash (expected 32-64 hex chars): {v}")
         return v.lower()
 
 

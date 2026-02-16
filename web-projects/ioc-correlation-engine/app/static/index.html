@@ -1938,11 +1938,18 @@ function App() {
                 resp = await fetch(`${API}/api/v1/analyze/upload`, { method: 'POST', body: fd });
             }
             clearInterval(stepTimer); setLoadStep(4);
-            if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || 'Analysis failed'); }
+            if (!resp.ok) {
+                let msg = `Error ${resp.status}`;
+                try {
+                    const e = await resp.json();
+                    msg = typeof e.detail === 'string' ? e.detail : Array.isArray(e.detail) ? e.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : JSON.stringify(e.detail || e);
+                } catch {}
+                throw new Error(msg);
+            }
             const data = await resp.json();
             setResult(data);
             toast(`Analysis complete \u2014 ${data.campaigns.length} campaigns detected`, 'success');
-        } catch (e) { setError(e.message); toast(e.message, 'error'); clearInterval(stepTimer); }
+        } catch (e) { const msg = typeof e.message === 'string' ? e.message : String(e); setError(msg); toast(msg, 'error'); clearInterval(stepTimer); }
         finally { setLoading(false); }
     };
 
